@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { createClient } from "@supabase/supabase-js";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import "./App.css";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const OWNER_PIN = import.meta.env.VITE_OWNER_PIN || "285888";
 
 const supabase =
   SUPABASE_URL && SUPABASE_ANON_KEY
@@ -20,10 +24,12 @@ const services = [
   { id: "deep45", name: "Pain Relief Deep Tissue Therapy - 45 min", duration: 0.75, price: 75, memberAllowed: false },
   { id: "deep60", name: "Pain Relief Deep Tissue Therapy - 60 min", duration: 1, price: 100, memberAllowed: true },
   { id: "deep90", name: "Pain Relief Deep Tissue Therapy - 90 min", duration: 1.5, price: 150, memberAllowed: true },
+
   { id: "injury30", name: "Injury Recovery Massage Therapy - 30 min", duration: 0.5, price: 60, memberAllowed: false },
   { id: "injury45", name: "Injury Recovery Massage Therapy - 45 min", duration: 0.75, price: 80, memberAllowed: false },
   { id: "injury60", name: "Injury Recovery Massage Therapy - 60 min", duration: 1, price: 110, memberAllowed: true },
   { id: "injury90", name: "Injury Recovery Massage Therapy - 90 min", duration: 1.5, price: 150, memberAllowed: true },
+
   { id: "myo30", name: "Myotherapy-based Muscle Therapy - 30 min", duration: 0.5, price: 85, memberAllowed: false },
   { id: "myo45", name: "Myotherapy-based Muscle Therapy - 45 min", duration: 0.75, price: 110, memberAllowed: false },
   { id: "myo60", name: "Myotherapy-based Muscle Therapy - 60 min", duration: 1, price: 125, memberAllowed: true },
@@ -50,24 +56,8 @@ function money(n) {
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
-  const OWNER_PIN = import.meta.env.VITE_OWNER_PIN || "285888";
-
-const [viewMode, setViewMode] = useState("staff");
-const isOwner = viewMode === "owner";
-
-function handleViewModeChange(value) {
-  if (value === "owner") {
-    const pin = prompt("Enter owner password");
-    if (pin === OWNER_PIN) {
-      setViewMode("owner");
-    } else {
-      alert("Wrong password");
-      setViewMode("staff");
-    }
-  } else {
-    setViewMode("staff");
-  }
-}
+  const [viewMode, setViewMode] = useState("staff");
+  const isOwner = viewMode === "owner";
 
   const [members, setMembers] = useState([]);
   const [checkouts, setCheckouts] = useState([]);
@@ -80,6 +70,7 @@ function handleViewModeChange(value) {
     card_id: "",
     full_name: "",
     phone: "",
+    email: "",
     expiry_date: expiryOneYear(),
     payment_method: "Cash",
     notes: "",
@@ -96,6 +87,20 @@ function handleViewModeChange(value) {
 
   const barcodeRef = useRef(null);
 
+  function handleViewModeChange(value) {
+    if (value === "owner") {
+      const pin = prompt("Enter owner password");
+      if (pin === OWNER_PIN) {
+        setViewMode("owner");
+      } else {
+        alert("Wrong password");
+        setViewMode("staff");
+      }
+    } else {
+      setViewMode("staff");
+    }
+  }
+
   async function loadData() {
     if (!supabase) return;
     setLoading(true);
@@ -109,7 +114,7 @@ function handleViewModeChange(value) {
       .from("checkouts")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(300);
+      .limit(500);
 
     if (mErr || cErr) {
       alert("Supabase loading error. Please check your SQL table and .env.");
@@ -142,10 +147,12 @@ function handleViewModeChange(value) {
   const filteredMembers = useMemo(() => {
     const q = memberSearch.toLowerCase().trim();
     if (!q) return members;
+
     return members.filter(
       (m) =>
         m.full_name?.toLowerCase().includes(q) ||
         m.phone?.toLowerCase().includes(q) ||
+        m.email?.toLowerCase().includes(q) ||
         m.card_id?.toLowerCase().includes(q)
     );
   }, [members, memberSearch]);
@@ -153,10 +160,12 @@ function handleViewModeChange(value) {
   const checkoutSearchResults = useMemo(() => {
     const q = checkoutSearch.toLowerCase().trim();
     if (!q) return [];
+
     return members.filter(
       (m) =>
         m.full_name?.toLowerCase().includes(q) ||
         m.phone?.toLowerCase().includes(q) ||
+        m.email?.toLowerCase().includes(q) ||
         m.card_id?.toLowerCase().includes(q)
     );
   }, [members, checkoutSearch]);
@@ -164,19 +173,21 @@ function handleViewModeChange(value) {
   const existingMemberWarning = useMemo(() => {
     const phone = memberForm.phone.trim();
     const card = memberForm.card_id.trim();
-    if (!phone && !card) return null;
+    const email = memberForm.email.trim().toLowerCase();
+
+    if (!phone && !card && !email) return null;
 
     return members.find(
       (m) =>
         (phone && m.phone === phone) ||
+        (email && m.email?.toLowerCase() === email) ||
         (card && m.card_id?.toLowerCase() === card.toLowerCase())
     );
-  }, [members, memberForm.phone, memberForm.card_id]);
+  }, [members, memberForm.phone, memberForm.card_id, memberForm.email]);
 
   const selectedService = services.find((s) => s.id === checkoutForm.service_id);
   const selectedMember = members.find((m) => m.id === checkoutForm.member_id);
-
-  const pricePreview = useMemo(() => {
+    const pricePreview = useMemo(() => {
     if (!selectedService) return null;
 
     const isMember = Boolean(selectedMember);
@@ -206,7 +217,7 @@ function handleViewModeChange(value) {
     }
 
     const discount = Number(checkoutForm.discount_amount || 0);
-    if (discount > 0 && checkoutForm.manual_price === "") {
+    if (isOwner && discount > 0 && checkoutForm.manual_price === "") {
       finalPrice = Math.max(0, basePrice - discount);
       priceOverride = true;
       note = "Owner discount applied.";
@@ -226,7 +237,8 @@ function handleViewModeChange(value) {
       note,
     };
   }, [selectedService, selectedMember, checkoutForm, isOwner]);
-    const todayStats = useMemo(() => {
+
+  const todayStats = useMemo(() => {
     const today = todayDate();
     const list = checkouts.filter((c) => c.created_at?.slice(0, 10) === today);
 
@@ -240,6 +252,7 @@ function handleViewModeChange(value) {
 
   async function addMember(e) {
     e.preventDefault();
+
     if (!supabase) return alert("Please set Supabase .env first.");
     if (!memberForm.full_name.trim()) return alert("Please enter member name.");
 
@@ -256,6 +269,7 @@ function handleViewModeChange(value) {
       card_id: cardId,
       full_name: memberForm.full_name.trim(),
       phone: memberForm.phone.trim(),
+      email: memberForm.email.trim(),
       join_date: todayDate(),
       expiry_date: memberForm.expiry_date || expiryOneYear(),
       membership_fee: YEAR_FEE,
@@ -275,6 +289,7 @@ function handleViewModeChange(value) {
       card_id: "",
       full_name: "",
       phone: "",
+      email: "",
       expiry_date: expiryOneYear(),
       payment_method: "Cash",
       notes: "",
@@ -320,6 +335,7 @@ function handleViewModeChange(value) {
 
   async function saveCheckout(e) {
     e.preventDefault();
+
     if (!supabase) return alert("Please set Supabase .env first.");
     if (!selectedService || !pricePreview) return alert("Please select service.");
 
@@ -362,7 +378,76 @@ function handleViewModeChange(value) {
     alert("Checkout saved.");
   }
 
-  return (
+  function downloadMembersExcel() {
+    const data = members.map((m) => ({
+      "Card ID": m.card_id,
+      Name: m.full_name,
+      Phone: m.phone,
+      Email: m.email,
+      "Join Date": m.join_date,
+      "Expiry Date": m.expiry_date,
+      Status: m.status,
+      Notes: m.notes,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(wb, ws, "Members");
+    XLSX.writeFile(wb, `YOHOME_Members_${todayDate()}.xlsx`);
+  }
+
+  function downloadMembersPDF() {
+    const doc = new jsPDF();
+
+    doc.text("YOHOME Membership List", 14, 15);
+
+    autoTable(doc, {
+      startY: 22,
+      head: [["Card ID", "Name", "Phone", "Email", "Join", "Expiry", "Status"]],
+      body: members.map((m) => [
+        m.card_id || "",
+        m.full_name || "",
+        m.phone || "",
+        m.email || "",
+        m.join_date || "",
+        m.expiry_date || "",
+        m.status || "",
+      ]),
+    });
+
+    doc.save(`YOHOME_Members_${todayDate()}.pdf`);
+  }
+
+  function downloadIncomePDF() {
+    const doc = new jsPDF();
+
+    const totalIncome = checkouts.reduce((s, x) => s + Number(x.final_price || 0), 0);
+    const totalStaff = checkouts.reduce((s, x) => s + Number(x.staff_pay || 0), 0);
+    const totalProfit = checkouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0);
+
+    doc.text("YOHOME Income Report", 14, 15);
+    doc.text(`Total Income: $${money(totalIncome)}`, 14, 25);
+    doc.text(`Staff Pay: $${money(totalStaff)}`, 14, 33);
+    doc.text(`Shop Profit: $${money(totalProfit)}`, 14, 41);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [["Date", "Customer", "Service", "Income", "Staff", "Profit", "Payment"]],
+      body: checkouts.map((r) => [
+        r.created_at ? new Date(r.created_at).toLocaleString() : "",
+        r.customer_name || "",
+        r.service_name || "",
+        `$${money(r.final_price)}`,
+        `$${money(r.staff_pay)}`,
+        `$${money(r.shop_profit)}`,
+        r.payment_method || "",
+      ]),
+    });
+
+    doc.save(`YOHOME_Income_Report_${todayDate()}.pdf`);
+  }
+    return (
     <div className="app">
       <aside className="sidebar">
         <h1>YOHOME</h1>
@@ -400,7 +485,7 @@ function handleViewModeChange(value) {
             <h2>{tab.toUpperCase()}</h2>
             <span>
               {isOwner
-                ? "Owner view: full finance and manual price control"
+                ? "Owner view: full finance, export and manual price control"
                 : "Staff view: finance profit hidden"}
             </span>
           </div>
@@ -447,6 +532,7 @@ function handleViewModeChange(value) {
           <div className="grid-two">
             <section className="panel">
               <h3>Register New Member</h3>
+
               <form onSubmit={addMember} className="form">
                 <label>Card ID</label>
                 <input
@@ -467,10 +553,17 @@ function handleViewModeChange(value) {
                   onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
                 />
 
+                <label>Email</label>
+                <input
+                  value={memberForm.email}
+                  onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
+                />
+
                 {existingMemberWarning && (
                   <div className="warningBox">
                     Possible existing member: {existingMemberWarning.full_name} ·{" "}
-                    {existingMemberWarning.phone} · {existingMemberWarning.card_id}
+                    {existingMemberWarning.phone} · {existingMemberWarning.email || "No email"} ·{" "}
+                    {existingMemberWarning.card_id}
                   </div>
                 )}
 
@@ -511,7 +604,7 @@ function handleViewModeChange(value) {
               <h3>Member Search</h3>
               <input
                 className="search"
-                placeholder="Search by name / phone / card ID"
+                placeholder="Search by name / phone / email / card ID"
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
               />
@@ -519,18 +612,20 @@ function handleViewModeChange(value) {
               <div className="memberList">
                 {filteredMembers.map((m) => {
                   const expired = new Date(m.expiry_date) < new Date(todayDate());
+
                   return (
                     <div className="memberItem" key={m.id}>
                       <div>
                         <strong>{m.full_name}</strong>
-                        <p>{m.phone || "No phone"} · {m.card_id}</p>
+                        <p>{m.phone || "No phone"} · {m.email || "No email"} · {m.card_id}</p>
                         <p>
-                          Expiry: {m.expiry_date}{" "}
+                          Join: {m.join_date || "-"} · Expiry: {m.expiry_date}{" "}
                           <span className={expired ? "badge bad" : "badge good"}>
                             {expired ? "Expired" : "Active"}
                           </span>
                         </p>
                       </div>
+
                       <div className="rowBtns">
                         <button onClick={() => renewMember(m)}>Renew</button>
                         {isOwner && (
@@ -546,7 +641,8 @@ function handleViewModeChange(value) {
             </section>
           </div>
         )}
-                {tab === "checkout" && (
+
+        {tab === "checkout" && (
           <div className="grid-two">
             <section className="panel">
               <h3>Service Checkout</h3>
@@ -554,7 +650,7 @@ function handleViewModeChange(value) {
               <label>Search Member</label>
               <input
                 className="search"
-                placeholder="Phone / Card ID / Name"
+                placeholder="Phone / Card ID / Name / Email"
                 value={checkoutSearch}
                 onChange={(e) => setCheckoutSearch(e.target.value)}
               />
@@ -563,7 +659,7 @@ function handleViewModeChange(value) {
                 <div className="searchDropdown">
                   {checkoutSearchResults.map((m) => (
                     <div key={m.id} onClick={() => selectCheckoutMember(m)}>
-                      {m.full_name} · {m.phone} · {m.card_id}
+                      {m.full_name} · {m.phone || "No phone"} · {m.email || "No email"} · {m.card_id}
                     </div>
                   ))}
                 </div>
@@ -580,7 +676,7 @@ function handleViewModeChange(value) {
                   <option value="guest">Guest</option>
                   {members.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.full_name}
+                      {m.full_name} · {m.phone || ""} · {m.card_id}
                     </option>
                   ))}
                 </select>
@@ -609,6 +705,7 @@ function handleViewModeChange(value) {
                 >
                   <option>Cash</option>
                   <option>Card</option>
+                  <option>Bank Transfer</option>
                 </select>
 
                 {isOwner && (
@@ -616,6 +713,7 @@ function handleViewModeChange(value) {
                     <label>Manual Price</label>
                     <input
                       type="number"
+                      placeholder="Optional owner price"
                       value={checkoutForm.manual_price}
                       onChange={(e) =>
                         setCheckoutForm({ ...checkoutForm, manual_price: e.target.value })
@@ -625,14 +723,16 @@ function handleViewModeChange(value) {
                     <label>Discount</label>
                     <input
                       type="number"
+                      placeholder="Optional discount"
                       value={checkoutForm.discount_amount}
                       onChange={(e) =>
                         setCheckoutForm({ ...checkoutForm, discount_amount: e.target.value })
                       }
                     />
 
-                    <label>Note</label>
+                    <label>Price Note</label>
                     <input
+                      placeholder="Reason for discount or price change"
                       value={checkoutForm.price_note}
                       onChange={(e) =>
                         setCheckoutForm({ ...checkoutForm, price_note: e.target.value })
@@ -643,12 +743,14 @@ function handleViewModeChange(value) {
 
                 {pricePreview && (
                   <div className="priceBox">
+                    <p>Base Price: ${money(pricePreview.basePrice)}</p>
                     <p>Final Price: ${money(pricePreview.finalPrice)}</p>
 
                     {isOwner && (
                       <>
                         <p>Staff Pay: ${money(pricePreview.staffPay)}</p>
                         <p>Profit: ${money(pricePreview.shopProfit)}</p>
+                        <p>Discount: ${money(pricePreview.discount)}</p>
                       </>
                     )}
 
@@ -656,12 +758,12 @@ function handleViewModeChange(value) {
                   </div>
                 )}
 
-                <button className="primary">Confirm</button>
+                <button className="primary">Confirm Checkout</button>
               </form>
             </section>
 
             <section className="panel">
-              <h3>Records</h3>
+              <h3>Latest Records</h3>
               <TableCheckouts rows={checkouts.slice(0, 20)} isOwner={isOwner} />
             </section>
           </div>
@@ -669,7 +771,22 @@ function handleViewModeChange(value) {
 
         {tab === "reports" && (
           <section className="panel">
-            <h3>All Records</h3>
+            <h3>Reports & Backup</h3>
+
+            {isOwner && (
+              <div className="exportBtns">
+                <button onClick={downloadMembersExcel}>Download Members Excel</button>
+                <button onClick={downloadMembersPDF}>Download Members PDF</button>
+                <button onClick={downloadIncomePDF}>Download Income Report PDF</button>
+              </div>
+            )}
+
+            {!isOwner && (
+              <div className="notice">
+                Staff view: export and profit report are hidden. Please switch to Owner View.
+              </div>
+            )}
+
             <TableCheckouts rows={checkouts} isOwner={isOwner} />
           </section>
         )}
@@ -679,39 +796,48 @@ function handleViewModeChange(value) {
 }
 
 function TableCheckouts({ rows, isOwner }) {
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Name</th>
-          <th>Service</th>
-          <th>Price</th>
-          {isOwner && (
-            <>
-              <th>Staff</th>
-              <th>Profit</th>
-            </>
-          )}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.id}>
-            <td>{new Date(r.created_at).toLocaleString()}</td>
-            <td>{r.customer_name}</td>
-            <td>{r.service_name}</td>
-            <td>${money(r.final_price)}</td>
+  if (!rows?.length) return <p className="empty">No records yet.</p>;
 
+  return (
+    <div className="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Name</th>
+            <th>Service</th>
+            <th>Price</th>
             {isOwner && (
               <>
-                <td>${money(r.staff_pay)}</td>
-                <td>${money(r.shop_profit)}</td>
+                <th>Staff</th>
+                <th>Profit</th>
+                <th>Payment</th>
+                <th>Note</th>
               </>
             )}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>{r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
+              <td>{r.customer_name}</td>
+              <td>{r.service_name}</td>
+              <td>${money(r.final_price)}</td>
+
+              {isOwner && (
+                <>
+                  <td>${money(r.staff_pay)}</td>
+                  <td>${money(r.shop_profit)}</td>
+                  <td>{r.payment_method || ""}</td>
+                  <td>{r.price_note || ""}</td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
