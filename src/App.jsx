@@ -19,31 +19,32 @@ const STAFF_HOUR = 30;
 const MEMBER_HOUR = 80;
 const YEAR_FEE = 100;
 
+const therapists = ["Tree", "Zheng", "Visiting Physio", "Other"];
+const referralSources = ["Google", "Walk-in", "Friend Referral", "Instagram", "Facebook", "Doctor / Clinic", "Other"];
+
 const services = [
   { id: "deep30", name: "Pain Relief Deep Tissue Therapy - 30 min", duration: 0.5, price: 50, memberAllowed: false },
   { id: "deep45", name: "Pain Relief Deep Tissue Therapy - 45 min", duration: 0.75, price: 75, memberAllowed: false },
   { id: "deep60", name: "Pain Relief Deep Tissue Therapy - 60 min", duration: 1, price: 100, memberAllowed: true },
   { id: "deep90", name: "Pain Relief Deep Tissue Therapy - 90 min", duration: 1.5, price: 150, memberAllowed: true },
-
   { id: "injury30", name: "Injury Recovery Massage Therapy - 30 min", duration: 0.5, price: 60, memberAllowed: false },
   { id: "injury45", name: "Injury Recovery Massage Therapy - 45 min", duration: 0.75, price: 80, memberAllowed: false },
   { id: "injury60", name: "Injury Recovery Massage Therapy - 60 min", duration: 1, price: 110, memberAllowed: true },
   { id: "injury90", name: "Injury Recovery Massage Therapy - 90 min", duration: 1.5, price: 150, memberAllowed: true },
-
   { id: "myo30", name: "Myotherapy-based Muscle Therapy - 30 min", duration: 0.5, price: 85, memberAllowed: false },
   { id: "myo45", name: "Myotherapy-based Muscle Therapy - 45 min", duration: 0.75, price: 110, memberAllowed: false },
   { id: "myo60", name: "Myotherapy-based Muscle Therapy - 60 min", duration: 1, price: 125, memberAllowed: true },
   { id: "myo90", name: "Myotherapy-based Muscle Therapy - 90 min", duration: 1.5, price: 165, memberAllowed: true },
 ];
 
+function todayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function expiryOneYear() {
   const d = new Date();
   d.setFullYear(d.getFullYear() + 1);
   return d.toISOString().slice(0, 10);
-}
-
-function todayDate() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function makeCardId() {
@@ -52,6 +53,35 @@ function makeCardId() {
 
 function money(n) {
   return Number(n || 0).toFixed(2);
+}
+
+function getAge(birthday) {
+  if (!birthday) return null;
+  const b = new Date(birthday);
+  const t = new Date();
+  let age = t.getFullYear() - b.getFullYear();
+  const m = t.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && t.getDate() < b.getDate())) age--;
+  return age;
+}
+
+function ageGroup(age) {
+  if (age === null || age < 0) return "Unknown";
+  if (age <= 24) return "18-24";
+  if (age <= 34) return "25-34";
+  if (age <= 44) return "35-44";
+  if (age <= 54) return "45-54";
+  return "55+";
+}
+
+function daysUntilBirthday(birthday) {
+  if (!birthday) return null;
+  const today = new Date();
+  const b = new Date(birthday);
+  let next = new Date(today.getFullYear(), b.getMonth(), b.getDate());
+  today.setHours(0, 0, 0, 0);
+  if (next < today) next = new Date(today.getFullYear() + 1, b.getMonth(), b.getDate());
+  return Math.ceil((next - today) / (1000 * 60 * 60 * 24));
 }
 
 export default function App() {
@@ -71,6 +101,12 @@ export default function App() {
     full_name: "",
     phone: "",
     email: "",
+    birthday: "",
+    suburb: "",
+    gender: "",
+    referral_source: "",
+    preferred_therapist: "",
+    home_store: "Abbotsford",
     expiry_date: expiryOneYear(),
     payment_method: "Cash",
     notes: "",
@@ -79,6 +115,7 @@ export default function App() {
   const [checkoutForm, setCheckoutForm] = useState({
     member_id: "guest",
     service_id: "",
+    therapist: "",
     payment_method: "Cash",
     manual_price: "",
     discount_amount: 0,
@@ -90,9 +127,8 @@ export default function App() {
   function handleViewModeChange(value) {
     if (value === "owner") {
       const pin = prompt("Enter owner password");
-      if (pin === OWNER_PIN) {
-        setViewMode("owner");
-      } else {
+      if (pin === OWNER_PIN) setViewMode("owner");
+      else {
         alert("Wrong password");
         setViewMode("staff");
       }
@@ -114,10 +150,10 @@ export default function App() {
       .from("checkouts")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(500);
+      .limit(1000);
 
     if (mErr || cErr) {
-      alert("Supabase loading error. Please check your SQL table and .env.");
+      alert("Supabase loading error. Please check SQL fields.");
       console.error(mErr || cErr);
     } else {
       setMembers(mData || []);
@@ -147,12 +183,12 @@ export default function App() {
   const filteredMembers = useMemo(() => {
     const q = memberSearch.toLowerCase().trim();
     if (!q) return members;
-
     return members.filter(
       (m) =>
         m.full_name?.toLowerCase().includes(q) ||
         m.phone?.toLowerCase().includes(q) ||
         m.email?.toLowerCase().includes(q) ||
+        m.suburb?.toLowerCase().includes(q) ||
         m.card_id?.toLowerCase().includes(q)
     );
   }, [members, memberSearch]);
@@ -160,7 +196,6 @@ export default function App() {
   const checkoutSearchResults = useMemo(() => {
     const q = checkoutSearch.toLowerCase().trim();
     if (!q) return [];
-
     return members.filter(
       (m) =>
         m.full_name?.toLowerCase().includes(q) ||
@@ -172,22 +207,23 @@ export default function App() {
 
   const existingMemberWarning = useMemo(() => {
     const phone = memberForm.phone.trim();
-    const card = memberForm.card_id.trim();
     const email = memberForm.email.trim().toLowerCase();
+    const card = memberForm.card_id.trim().toLowerCase();
 
-    if (!phone && !card && !email) return null;
+    if (!phone && !email && !card) return null;
 
     return members.find(
       (m) =>
         (phone && m.phone === phone) ||
         (email && m.email?.toLowerCase() === email) ||
-        (card && m.card_id?.toLowerCase() === card.toLowerCase())
+        (card && m.card_id?.toLowerCase() === card)
     );
-  }, [members, memberForm.phone, memberForm.card_id, memberForm.email]);
+  }, [members, memberForm]);
 
   const selectedService = services.find((s) => s.id === checkoutForm.service_id);
   const selectedMember = members.find((m) => m.id === checkoutForm.member_id);
-    const pricePreview = useMemo(() => {
+
+  const pricePreview = useMemo(() => {
     if (!selectedService) return null;
 
     const isMember = Boolean(selectedMember);
@@ -238,21 +274,68 @@ export default function App() {
     };
   }, [selectedService, selectedMember, checkoutForm, isOwner]);
 
-  const todayStats = useMemo(() => {
+  const analytics = useMemo(() => {
     const today = todayDate();
-    const list = checkouts.filter((c) => c.created_at?.slice(0, 10) === today);
+    const thisMonth = today.slice(0, 7);
+
+    const activeMembers = members.filter((m) => new Date(m.expiry_date) >= new Date(today));
+    const expiredMembers = members.filter((m) => new Date(m.expiry_date) < new Date(today));
+    const newThisMonth = members.filter((m) => m.join_date?.slice(0, 7) === thisMonth);
+
+    const todayCheckouts = checkouts.filter((c) => c.created_at?.slice(0, 10) === today);
+    const monthCheckouts = checkouts.filter((c) => c.created_at?.slice(0, 7) === thisMonth);
+
+    const groupCounts = {};
+    members.forEach((m) => {
+      const group = ageGroup(getAge(m.birthday));
+      groupCounts[group] = (groupCounts[group] || 0) + 1;
+    });
+
+    const suburbCounts = {};
+    members.forEach((m) => {
+      const suburb = (m.suburb || "Unknown").trim();
+      suburbCounts[suburb] = (suburbCounts[suburb] || 0) + 1;
+    });
+
+    const therapistRevenue = {};
+    checkouts.forEach((c) => {
+      const name = c.therapist || "Not set";
+      therapistRevenue[name] = (therapistRevenue[name] || 0) + Number(c.final_price || 0);
+    });
+
+    const upcomingBirthdays = members
+      .map((m) => ({ ...m, days: daysUntilBirthday(m.birthday) }))
+      .filter((m) => m.days !== null && m.days <= 30)
+      .sort((a, b) => a.days - b.days);
+
+    const expiringSoon = members
+      .map((m) => ({
+        ...m,
+        daysLeft: Math.ceil((new Date(m.expiry_date) - new Date(today)) / (1000 * 60 * 60 * 24)),
+      }))
+      .filter((m) => m.daysLeft >= 0 && m.daysLeft <= 30)
+      .sort((a, b) => a.daysLeft - b.daysLeft);
 
     return {
-      income: list.reduce((s, x) => s + Number(x.final_price || 0), 0),
-      staff: list.reduce((s, x) => s + Number(x.staff_pay || 0), 0),
-      profit: list.reduce((s, x) => s + Number(x.shop_profit || 0), 0),
-      count: list.length,
+      totalMembers: members.length,
+      activeMembers: activeMembers.length,
+      expiredMembers: expiredMembers.length,
+      newThisMonth: newThisMonth.length,
+      todayIncome: todayCheckouts.reduce((s, x) => s + Number(x.final_price || 0), 0),
+      todayStaff: todayCheckouts.reduce((s, x) => s + Number(x.staff_pay || 0), 0),
+      todayProfit: todayCheckouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0),
+      todayCount: todayCheckouts.length,
+      monthRevenue: monthCheckouts.reduce((s, x) => s + Number(x.final_price || 0), 0),
+      groupCounts,
+      suburbCounts,
+      therapistRevenue,
+      upcomingBirthdays,
+      expiringSoon,
     };
-  }, [checkouts]);
+  }, [members, checkouts]);
 
   async function addMember(e) {
     e.preventDefault();
-
     if (!supabase) return alert("Please set Supabase .env first.");
     if (!memberForm.full_name.trim()) return alert("Please enter member name.");
 
@@ -263,33 +346,32 @@ export default function App() {
       if (!ok) return;
     }
 
-    const cardId = memberForm.card_id.trim() || makeCardId();
-
     const payload = {
-      card_id: cardId,
+      ...memberForm,
+      card_id: memberForm.card_id.trim() || makeCardId(),
       full_name: memberForm.full_name.trim(),
       phone: memberForm.phone.trim(),
       email: memberForm.email.trim(),
+      suburb: memberForm.suburb.trim(),
       join_date: todayDate(),
-      expiry_date: memberForm.expiry_date || expiryOneYear(),
       membership_fee: YEAR_FEE,
-      payment_method: memberForm.payment_method,
       status: "active",
-      notes: memberForm.notes,
     };
 
     const { error } = await supabase.from("members").insert(payload);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    if (error) return alert(error.message);
 
     setMemberForm({
       card_id: "",
       full_name: "",
       phone: "",
       email: "",
+      birthday: "",
+      suburb: "",
+      gender: "",
+      referral_source: "",
+      preferred_therapist: "",
+      home_store: "Abbotsford",
       expiry_date: expiryOneYear(),
       payment_method: "Cash",
       notes: "",
@@ -300,19 +382,16 @@ export default function App() {
   }
 
   async function renewMember(member) {
-    const newExpiry = expiryOneYear();
-
     const { error } = await supabase
       .from("members")
       .update({
-        expiry_date: newExpiry,
+        expiry_date: expiryOneYear(),
         status: "active",
         membership_fee: YEAR_FEE,
       })
       .eq("id", member.id);
 
     if (error) return alert(error.message);
-
     await loadData();
     alert("Membership renewed for 1 year.");
   }
@@ -322,7 +401,6 @@ export default function App() {
     if (!confirm(`Delete member ${member.full_name}?`)) return;
 
     const { error } = await supabase.from("members").delete().eq("id", member.id);
-
     if (error) return alert(error.message);
 
     await loadData();
@@ -335,7 +413,6 @@ export default function App() {
 
   async function saveCheckout(e) {
     e.preventDefault();
-
     if (!supabase) return alert("Please set Supabase .env first.");
     if (!selectedService || !pricePreview) return alert("Please select service.");
 
@@ -352,21 +429,20 @@ export default function App() {
       staff_pay: pricePreview.staffPay,
       shop_profit: pricePreview.shopProfit,
       payment_method: checkoutForm.payment_method,
+      therapist: checkoutForm.therapist,
+      customer_suburb: selectedMember?.suburb || "",
       discount_amount: isOwner ? pricePreview.discount : 0,
       price_override: isOwner ? pricePreview.priceOverride : false,
       price_note: isOwner ? checkoutForm.price_note : "",
     };
 
     const { error } = await supabase.from("checkouts").insert(payload);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    if (error) return alert(error.message);
 
     setCheckoutForm({
       member_id: "guest",
       service_id: "",
+      therapist: "",
       payment_method: "Cash",
       manual_price: "",
       discount_amount: 0,
@@ -384,44 +460,55 @@ export default function App() {
       Name: m.full_name,
       Phone: m.phone,
       Email: m.email,
+      Birthday: m.birthday,
+      Age: getAge(m.birthday) || "",
+      Suburb: m.suburb,
+      Gender: m.gender,
+      "Referral Source": m.referral_source,
+      "Preferred Therapist": m.preferred_therapist,
+      "Home Store": m.home_store,
       "Join Date": m.join_date,
       "Expiry Date": m.expiry_date,
-      Status: m.status,
+      Status: new Date(m.expiry_date) >= new Date(todayDate()) ? "Active" : "Expired",
       Notes: m.notes,
     }));
 
-    const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(wb, ws, "Members");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Members");
     XLSX.writeFile(wb, `YOHOME_Members_${todayDate()}.xlsx`);
   }
 
-  function downloadMembersPDF() {
-    const doc = new jsPDF();
+  function downloadCRMExcel() {
+    const wb = XLSX.utils.book_new();
 
-    doc.text("YOHOME Membership List", 14, 15);
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(Object.entries(analytics.groupCounts).map(([AgeGroup, Members]) => ({ AgeGroup, Members }))),
+      "Age Groups"
+    );
 
-    autoTable(doc, {
-      startY: 22,
-      head: [["Card ID", "Name", "Phone", "Email", "Join", "Expiry", "Status"]],
-      body: members.map((m) => [
-        m.card_id || "",
-        m.full_name || "",
-        m.phone || "",
-        m.email || "",
-        m.join_date || "",
-        m.expiry_date || "",
-        m.status || "",
-      ]),
-    });
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(Object.entries(analytics.suburbCounts).map(([Suburb, Members]) => ({ Suburb, Members }))),
+      "Suburbs"
+    );
 
-    doc.save(`YOHOME_Members_${todayDate()}.pdf`);
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(analytics.upcomingBirthdays.map((m) => ({
+        Name: m.full_name,
+        Phone: m.phone,
+        Birthday: m.birthday,
+        Days: m.days,
+      }))),
+      "Birthdays"
+    );
+
+    XLSX.writeFile(wb, `YOHOME_CRM_Analytics_${todayDate()}.xlsx`);
   }
 
   function downloadIncomePDF() {
     const doc = new jsPDF();
-
     const totalIncome = checkouts.reduce((s, x) => s + Number(x.final_price || 0), 0);
     const totalStaff = checkouts.reduce((s, x) => s + Number(x.staff_pay || 0), 0);
     const totalProfit = checkouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0);
@@ -433,11 +520,12 @@ export default function App() {
 
     autoTable(doc, {
       startY: 50,
-      head: [["Date", "Customer", "Service", "Income", "Staff", "Profit", "Payment"]],
+      head: [["Date", "Customer", "Service", "Therapist", "Income", "Staff", "Profit", "Payment"]],
       body: checkouts.map((r) => [
         r.created_at ? new Date(r.created_at).toLocaleString() : "",
         r.customer_name || "",
         r.service_name || "",
+        r.therapist || "",
         `$${money(r.final_price)}`,
         `$${money(r.staff_pay)}`,
         `$${money(r.shop_profit)}`,
@@ -447,11 +535,34 @@ export default function App() {
 
     doc.save(`YOHOME_Income_Report_${todayDate()}.pdf`);
   }
-    return (
+
+  function downloadMembersPDF() {
+    const doc = new jsPDF();
+    doc.text("YOHOME Membership List", 14, 15);
+
+    autoTable(doc, {
+      startY: 22,
+      head: [["Card", "Name", "Phone", "Email", "Birthday", "Suburb", "Join", "Expiry"]],
+      body: members.map((m) => [
+        m.card_id || "",
+        m.full_name || "",
+        m.phone || "",
+        m.email || "",
+        m.birthday || "",
+        m.suburb || "",
+        m.join_date || "",
+        m.expiry_date || "",
+      ]),
+    });
+
+    doc.save(`YOHOME_Members_${todayDate()}.pdf`);
+  }
+
+  return (
     <div className="app">
       <aside className="sidebar">
         <h1>YOHOME</h1>
-        <p>Membership System</p>
+        <p>Membership CRM</p>
 
         <div className="modeBox">
           <span>Current View</span>
@@ -461,33 +572,20 @@ export default function App() {
           </select>
         </div>
 
-        <button onClick={() => setTab("dashboard")} className={tab === "dashboard" ? "active" : ""}>
-          Dashboard
-        </button>
-        <button onClick={() => setTab("members")} className={tab === "members" ? "active" : ""}>
-          Members
-        </button>
-        <button onClick={() => setTab("checkout")} className={tab === "checkout" ? "active" : ""}>
-          Checkout
-        </button>
-        <button onClick={() => setTab("reports")} className={tab === "reports" ? "active" : ""}>
-          Reports
-        </button>
+        {["dashboard", "members", "checkout", "analytics", "reports"].map((x) => (
+          <button key={x} onClick={() => setTab(x)} className={tab === x ? "active" : ""}>
+            {x.charAt(0).toUpperCase() + x.slice(1)}
+          </button>
+        ))}
 
-        <div className="side-note">
-          {supabase ? "Cloud database connected" : "Supabase not connected yet"}
-        </div>
+        <div className="side-note">{supabase ? "Cloud database connected" : "Supabase not connected yet"}</div>
       </aside>
 
       <main className="main">
         <div className="topbar">
           <div>
             <h2>{tab.toUpperCase()}</h2>
-            <span>
-              {isOwner
-                ? "Owner view: full finance, export and manual price control"
-                : "Staff view: finance profit hidden"}
-            </span>
+            <span>{isOwner ? "Owner view: full CRM, export and finance" : "Staff view: profit hidden"}</span>
           </div>
           <button onClick={loadData}>Refresh</button>
         </div>
@@ -497,34 +595,29 @@ export default function App() {
         {tab === "dashboard" && (
           <>
             <div className="cards">
-              <div className="card">
-                <span>Today Income</span>
-                <strong>${money(todayStats.income)}</strong>
-              </div>
-
-              {isOwner && (
-                <>
-                  <div className="card">
-                    <span>Staff Pay</span>
-                    <strong>${money(todayStats.staff)}</strong>
-                  </div>
-                  <div className="card">
-                    <span>Shop Profit</span>
-                    <strong>${money(todayStats.profit)}</strong>
-                  </div>
-                </>
-              )}
-
-              <div className="card">
-                <span>Today Checkouts</span>
-                <strong>{todayStats.count}</strong>
-              </div>
+              <Card title="Total Members" value={analytics.totalMembers} />
+              <Card title="Active Members" value={analytics.activeMembers} />
+              <Card title="Expired Members" value={analytics.expiredMembers} />
+              <Card title="New This Month" value={analytics.newThisMonth} />
+              <Card title="Today Income" value={`$${money(analytics.todayIncome)}`} />
+              <Card title="Today Checkouts" value={analytics.todayCount} />
+              {isOwner && <Card title="Today Profit" value={`$${money(analytics.todayProfit)}`} />}
+              {isOwner && <Card title="Monthly Revenue" value={`$${money(analytics.monthRevenue)}`} />}
             </div>
 
-            <section className="panel">
-              <h3>Recent Checkouts</h3>
-              <TableCheckouts rows={checkouts.slice(0, 8)} isOwner={isOwner} />
-            </section>
+            <div className="grid-two">
+              <MiniPanel title="Upcoming Birthdays">
+                {analytics.upcomingBirthdays.length ? analytics.upcomingBirthdays.map((m) => (
+                  <p key={m.id}>{m.full_name} · {m.birthday} · {m.days} days</p>
+                )) : <p>No birthdays in 30 days.</p>}
+              </MiniPanel>
+
+              <MiniPanel title="Expiring Soon">
+                {analytics.expiringSoon.length ? analytics.expiringSoon.map((m) => (
+                  <p key={m.id}>{m.full_name} · expires in {m.daysLeft} days</p>
+                )) : <p>No memberships expiring soon.</p>}
+              </MiniPanel>
+            </div>
           </>
         )}
 
@@ -532,107 +625,87 @@ export default function App() {
           <div className="grid-two">
             <section className="panel">
               <h3>Register New Member</h3>
-
               <form onSubmit={addMember} className="form">
                 <label>Card ID</label>
-                <input
-                  placeholder="Leave blank for auto ID"
-                  value={memberForm.card_id}
-                  onChange={(e) => setMemberForm({ ...memberForm, card_id: e.target.value })}
-                />
+                <input placeholder="Leave blank for auto ID" value={memberForm.card_id} onChange={(e) => setMemberForm({ ...memberForm, card_id: e.target.value })} />
 
                 <label>Full Name</label>
-                <input
-                  value={memberForm.full_name}
-                  onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })}
-                />
+                <input value={memberForm.full_name} onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })} />
 
                 <label>Phone</label>
-                <input
-                  value={memberForm.phone}
-                  onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
-                />
+                <input value={memberForm.phone} onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })} />
 
                 <label>Email</label>
-                <input
-                  value={memberForm.email}
-                  onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
-                />
+                <input value={memberForm.email} onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })} />
 
-                {existingMemberWarning && (
-                  <div className="warningBox">
-                    Possible existing member: {existingMemberWarning.full_name} ·{" "}
-                    {existingMemberWarning.phone} · {existingMemberWarning.email || "No email"} ·{" "}
-                    {existingMemberWarning.card_id}
-                  </div>
-                )}
+                <label>Date of Birth</label>
+                <input type="date" value={memberForm.birthday} onChange={(e) => setMemberForm({ ...memberForm, birthday: e.target.value })} />
+
+                <label>Suburb / Area</label>
+                <input placeholder="e.g. Abbotsford, Richmond, Kew" value={memberForm.suburb} onChange={(e) => setMemberForm({ ...memberForm, suburb: e.target.value })} />
+
+                <label>Gender</label>
+                <select value={memberForm.gender} onChange={(e) => setMemberForm({ ...memberForm, gender: e.target.value })}>
+                  <option value="">Prefer not to say</option>
+                  <option>Female</option>
+                  <option>Male</option>
+                  <option>Other</option>
+                </select>
+
+                <label>Referral Source</label>
+                <select value={memberForm.referral_source} onChange={(e) => setMemberForm({ ...memberForm, referral_source: e.target.value })}>
+                  <option value="">Select</option>
+                  {referralSources.map((x) => <option key={x}>{x}</option>)}
+                </select>
+
+                <label>Preferred Therapist</label>
+                <select value={memberForm.preferred_therapist} onChange={(e) => setMemberForm({ ...memberForm, preferred_therapist: e.target.value })}>
+                  <option value="">Select</option>
+                  {therapists.map((x) => <option key={x}>{x}</option>)}
+                </select>
 
                 <label>Expiry Date</label>
-                <input
-                  type="date"
-                  value={memberForm.expiry_date}
-                  onChange={(e) => setMemberForm({ ...memberForm, expiry_date: e.target.value })}
-                />
+                <input type="date" value={memberForm.expiry_date} onChange={(e) => setMemberForm({ ...memberForm, expiry_date: e.target.value })} />
 
                 <label>Payment Method</label>
-                <select
-                  value={memberForm.payment_method}
-                  onChange={(e) => setMemberForm({ ...memberForm, payment_method: e.target.value })}
-                >
+                <select value={memberForm.payment_method} onChange={(e) => setMemberForm({ ...memberForm, payment_method: e.target.value })}>
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
                 </select>
 
                 <label>Notes</label>
-                <textarea
-                  value={memberForm.notes}
-                  onChange={(e) => setMemberForm({ ...memberForm, notes: e.target.value })}
-                />
+                <textarea value={memberForm.notes} onChange={(e) => setMemberForm({ ...memberForm, notes: e.target.value })} />
+
+                {existingMemberWarning && (
+                  <div className="warningBox">
+                    Possible existing member: {existingMemberWarning.full_name} · {existingMemberWarning.phone} · {existingMemberWarning.card_id}
+                  </div>
+                )}
 
                 <button className="primary">Save Member - ${YEAR_FEE}</button>
               </form>
 
-              {memberForm.card_id && (
-                <div className="barcodeBox">
-                  <svg ref={barcodeRef}></svg>
-                </div>
-              )}
+              {memberForm.card_id && <div className="barcodeBox"><svg ref={barcodeRef}></svg></div>}
             </section>
 
             <section className="panel">
               <h3>Member Search</h3>
-              <input
-                className="search"
-                placeholder="Search by name / phone / email / card ID"
-                value={memberSearch}
-                onChange={(e) => setMemberSearch(e.target.value)}
-              />
+              <input className="search" placeholder="Search name / phone / email / suburb / card ID" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} />
 
               <div className="memberList">
                 {filteredMembers.map((m) => {
                   const expired = new Date(m.expiry_date) < new Date(todayDate());
-
                   return (
                     <div className="memberItem" key={m.id}>
                       <div>
                         <strong>{m.full_name}</strong>
                         <p>{m.phone || "No phone"} · {m.email || "No email"} · {m.card_id}</p>
-                        <p>
-                          Join: {m.join_date || "-"} · Expiry: {m.expiry_date}{" "}
-                          <span className={expired ? "badge bad" : "badge good"}>
-                            {expired ? "Expired" : "Active"}
-                          </span>
-                        </p>
+                        <p>{m.suburb || "No suburb"} · Age: {getAge(m.birthday) || "-"} · Expiry: {m.expiry_date} <span className={expired ? "badge bad" : "badge good"}>{expired ? "Expired" : "Active"}</span></p>
                       </div>
-
                       <div className="rowBtns">
                         <button onClick={() => renewMember(m)}>Renew</button>
-                        {isOwner && (
-                          <button className="danger" onClick={() => deleteMember(m)}>
-                            Delete
-                          </button>
-                        )}
+                        {isOwner && <button className="danger" onClick={() => deleteMember(m)}>Delete</button>}
                       </div>
                     </div>
                   );
@@ -646,63 +719,38 @@ export default function App() {
           <div className="grid-two">
             <section className="panel">
               <h3>Service Checkout</h3>
-
               <label>Search Member</label>
-              <input
-                className="search"
-                placeholder="Phone / Card ID / Name / Email"
-                value={checkoutSearch}
-                onChange={(e) => setCheckoutSearch(e.target.value)}
-              />
+              <input className="search" placeholder="Phone / Card ID / Name / Email" value={checkoutSearch} onChange={(e) => setCheckoutSearch(e.target.value)} />
 
               {checkoutSearchResults.length > 0 && (
                 <div className="searchDropdown">
                   {checkoutSearchResults.map((m) => (
-                    <div key={m.id} onClick={() => selectCheckoutMember(m)}>
-                      {m.full_name} · {m.phone || "No phone"} · {m.email || "No email"} · {m.card_id}
-                    </div>
+                    <div key={m.id} onClick={() => selectCheckoutMember(m)}>{m.full_name} · {m.phone || "No phone"} · {m.card_id}</div>
                   ))}
                 </div>
               )}
 
               <form onSubmit={saveCheckout} className="form">
                 <label>Customer</label>
-                <select
-                  value={checkoutForm.member_id}
-                  onChange={(e) =>
-                    setCheckoutForm({ ...checkoutForm, member_id: e.target.value })
-                  }
-                >
+                <select value={checkoutForm.member_id} onChange={(e) => setCheckoutForm({ ...checkoutForm, member_id: e.target.value })}>
                   <option value="guest">Guest</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.full_name} · {m.phone || ""} · {m.card_id}
-                    </option>
-                  ))}
+                  {members.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.phone || ""} · {m.card_id}</option>)}
                 </select>
 
                 <label>Service</label>
-                <select
-                  value={checkoutForm.service_id}
-                  onChange={(e) =>
-                    setCheckoutForm({ ...checkoutForm, service_id: e.target.value })
-                  }
-                >
+                <select value={checkoutForm.service_id} onChange={(e) => setCheckoutForm({ ...checkoutForm, service_id: e.target.value })}>
                   <option value="">Select service</option>
-                  {services.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
+                  {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+
+                <label>Therapist</label>
+                <select value={checkoutForm.therapist} onChange={(e) => setCheckoutForm({ ...checkoutForm, therapist: e.target.value })}>
+                  <option value="">Select</option>
+                  {therapists.map((x) => <option key={x}>{x}</option>)}
                 </select>
 
                 <label>Payment</label>
-                <select
-                  value={checkoutForm.payment_method}
-                  onChange={(e) =>
-                    setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })
-                  }
-                >
+                <select value={checkoutForm.payment_method} onChange={(e) => setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })}>
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
@@ -711,33 +759,13 @@ export default function App() {
                 {isOwner && (
                   <>
                     <label>Manual Price</label>
-                    <input
-                      type="number"
-                      placeholder="Optional owner price"
-                      value={checkoutForm.manual_price}
-                      onChange={(e) =>
-                        setCheckoutForm({ ...checkoutForm, manual_price: e.target.value })
-                      }
-                    />
+                    <input type="number" value={checkoutForm.manual_price} onChange={(e) => setCheckoutForm({ ...checkoutForm, manual_price: e.target.value })} />
 
                     <label>Discount</label>
-                    <input
-                      type="number"
-                      placeholder="Optional discount"
-                      value={checkoutForm.discount_amount}
-                      onChange={(e) =>
-                        setCheckoutForm({ ...checkoutForm, discount_amount: e.target.value })
-                      }
-                    />
+                    <input type="number" value={checkoutForm.discount_amount} onChange={(e) => setCheckoutForm({ ...checkoutForm, discount_amount: e.target.value })} />
 
                     <label>Price Note</label>
-                    <input
-                      placeholder="Reason for discount or price change"
-                      value={checkoutForm.price_note}
-                      onChange={(e) =>
-                        setCheckoutForm({ ...checkoutForm, price_note: e.target.value })
-                      }
-                    />
+                    <input value={checkoutForm.price_note} onChange={(e) => setCheckoutForm({ ...checkoutForm, price_note: e.target.value })} />
                   </>
                 )}
 
@@ -745,15 +773,7 @@ export default function App() {
                   <div className="priceBox">
                     <p>Base Price: ${money(pricePreview.basePrice)}</p>
                     <p>Final Price: ${money(pricePreview.finalPrice)}</p>
-
-                    {isOwner && (
-                      <>
-                        <p>Staff Pay: ${money(pricePreview.staffPay)}</p>
-                        <p>Profit: ${money(pricePreview.shopProfit)}</p>
-                        <p>Discount: ${money(pricePreview.discount)}</p>
-                      </>
-                    )}
-
+                    {isOwner && <><p>Staff Pay: ${money(pricePreview.staffPay)}</p><p>Profit: ${money(pricePreview.shopProfit)}</p></>}
                     <strong>{pricePreview.note}</strong>
                   </div>
                 )}
@@ -769,28 +789,67 @@ export default function App() {
           </div>
         )}
 
+        {tab === "analytics" && (
+          <div className="grid-two">
+            <MiniPanel title="Age Group Analysis">
+              <SimpleTable data={Object.entries(analytics.groupCounts)} headers={["Age Group", "Members"]} />
+            </MiniPanel>
+
+            <MiniPanel title="Suburb / Area Analysis">
+              <SimpleTable data={Object.entries(analytics.suburbCounts)} headers={["Suburb", "Members"]} />
+            </MiniPanel>
+
+            {isOwner && (
+              <MiniPanel title="Revenue by Therapist">
+                <SimpleTable data={Object.entries(analytics.therapistRevenue).map(([k, v]) => [k, `$${money(v)}`])} headers={["Therapist", "Revenue"]} />
+              </MiniPanel>
+            )}
+
+            <MiniPanel title="Upcoming Birthdays">
+              <SimpleTable data={analytics.upcomingBirthdays.map((m) => [m.full_name, m.birthday, `${m.days} days`])} headers={["Name", "Birthday", "Remaining"]} />
+            </MiniPanel>
+          </div>
+        )}
+
         {tab === "reports" && (
           <section className="panel">
             <h3>Reports & Backup</h3>
 
-            {isOwner && (
+            {isOwner ? (
               <div className="exportBtns">
                 <button onClick={downloadMembersExcel}>Download Members Excel</button>
                 <button onClick={downloadMembersPDF}>Download Members PDF</button>
+                <button onClick={downloadCRMExcel}>Download CRM Excel</button>
                 <button onClick={downloadIncomePDF}>Download Income Report PDF</button>
               </div>
-            )}
-
-            {!isOwner && (
-              <div className="notice">
-                Staff view: export and profit report are hidden. Please switch to Owner View.
-              </div>
+            ) : (
+              <div className="notice">Staff view: export and profit report are hidden.</div>
             )}
 
             <TableCheckouts rows={checkouts} isOwner={isOwner} />
           </section>
         )}
       </main>
+    </div>
+  );
+}
+
+function Card({ title, value }) {
+  return <div className="card"><span>{title}</span><strong>{value}</strong></div>;
+}
+
+function MiniPanel({ title, children }) {
+  return <section className="panel"><h3>{title}</h3>{children}</section>;
+}
+
+function SimpleTable({ data, headers }) {
+  if (!data?.length) return <p className="empty">No data yet.</p>;
+  return (
+    <div className="tableWrap">
+      <table>
+        <thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead>
+        <tbody>{data.map((row, i) => <tr key={i}>{row.map((x, j) => <td key={j}>{x}</td>)}</tr>)}</tbody>
+      </table>
     </div>
   );
 }
@@ -805,35 +864,21 @@ function TableCheckouts({ rows, isOwner }) {
           <tr>
             <th>Date</th>
             <th>Name</th>
+            <th>Therapist</th>
             <th>Service</th>
             <th>Price</th>
-            {isOwner && (
-              <>
-                <th>Staff</th>
-                <th>Profit</th>
-                <th>Payment</th>
-                <th>Note</th>
-              </>
-            )}
+            {isOwner && <><th>Staff</th><th>Profit</th><th>Payment</th><th>Note</th></>}
           </tr>
         </thead>
-
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
               <td>{r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
               <td>{r.customer_name}</td>
+              <td>{r.therapist || ""}</td>
               <td>{r.service_name}</td>
               <td>${money(r.final_price)}</td>
-
-              {isOwner && (
-                <>
-                  <td>${money(r.staff_pay)}</td>
-                  <td>${money(r.shop_profit)}</td>
-                  <td>{r.payment_method || ""}</td>
-                  <td>{r.price_note || ""}</td>
-                </>
-              )}
+              {isOwner && <><td>${money(r.staff_pay)}</td><td>${money(r.shop_profit)}</td><td>{r.payment_method || ""}</td><td>{r.price_note || ""}</td></>}
             </tr>
           ))}
         </tbody>
