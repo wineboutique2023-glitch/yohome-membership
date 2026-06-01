@@ -15,36 +15,23 @@ const supabase =
     ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
-const STAFF_HOUR = 30;
-const MEMBER_HOUR = 80;
-const YEAR_FEE = 100;
-
-const referralSources = [
-  "Google",
-  "Walk-in",
-  "Friend Referral",
-  "Instagram",
-  "Facebook",
-  "Doctor / Clinic",
-  "Other",
+const fallbackServices = [
+  { id: "deep30", name: "Pain Relief Deep Tissue Therapy - 30 min", duration: 0.5, normal_price: 50, member_price: 50, staff_pay: 15, member_allowed: false, active: true },
+  { id: "deep45", name: "Pain Relief Deep Tissue Therapy - 45 min", duration: 0.75, normal_price: 75, member_price: 75, staff_pay: 22.5, member_allowed: false, active: true },
+  { id: "deep60", name: "Pain Relief Deep Tissue Therapy - 60 min", duration: 1, normal_price: 100, member_price: 80, staff_pay: 30, member_allowed: true, active: true },
+  { id: "deep90", name: "Pain Relief Deep Tissue Therapy - 90 min", duration: 1.5, normal_price: 150, member_price: 120, staff_pay: 45, member_allowed: true, active: true },
+  { id: "injury30", name: "Injury Recovery Massage Therapy - 30 min", duration: 0.5, normal_price: 60, member_price: 60, staff_pay: 15, member_allowed: false, active: true },
+  { id: "injury45", name: "Injury Recovery Massage Therapy - 45 min", duration: 0.75, normal_price: 80, member_price: 80, staff_pay: 22.5, member_allowed: false, active: true },
+  { id: "injury60", name: "Injury Recovery Massage Therapy - 60 min", duration: 1, normal_price: 110, member_price: 80, staff_pay: 30, member_allowed: true, active: true },
+  { id: "injury90", name: "Injury Recovery Massage Therapy - 90 min", duration: 1.5, normal_price: 150, member_price: 120, staff_pay: 45, member_allowed: true, active: true },
+  { id: "myo30", name: "Myotherapy-based Muscle Therapy - 30 min", duration: 0.5, normal_price: 85, member_price: 85, staff_pay: 15, member_allowed: false, active: true },
+  { id: "myo45", name: "Myotherapy-based Muscle Therapy - 45 min", duration: 0.75, normal_price: 110, member_price: 110, staff_pay: 22.5, member_allowed: false, active: true },
+  { id: "myo60", name: "Myotherapy-based Muscle Therapy - 60 min", duration: 1, normal_price: 125, member_price: 100, staff_pay: 30, member_allowed: true, active: true },
+  { id: "myo90", name: "Myotherapy-based Muscle Therapy - 90 min", duration: 1.5, normal_price: 165, member_price: 135, staff_pay: 45, member_allowed: true, active: true },
 ];
 
-const defaultSellers = ["Zheng", "Tree", "Yuki", "Nancy", "Front Desk", "Other"];
-
-const defaultServices = [
-  { id: "deep30", name: "Pain Relief Deep Tissue Therapy - 30 min", duration: 0.5, price: 50, staff_pay: 15, member_allowed: false, active: true },
-  { id: "deep45", name: "Pain Relief Deep Tissue Therapy - 45 min", duration: 0.75, price: 75, staff_pay: 22.5, member_allowed: false, active: true },
-  { id: "deep60", name: "Pain Relief Deep Tissue Therapy - 60 min", duration: 1, price: 100, staff_pay: 30, member_allowed: true, active: true },
-  { id: "deep90", name: "Pain Relief Deep Tissue Therapy - 90 min", duration: 1.5, price: 150, staff_pay: 45, member_allowed: true, active: true },
-  { id: "injury30", name: "Injury Recovery Massage Therapy - 30 min", duration: 0.5, price: 60, staff_pay: 15, member_allowed: false, active: true },
-  { id: "injury45", name: "Injury Recovery Massage Therapy - 45 min", duration: 0.75, price: 80, staff_pay: 22.5, member_allowed: false, active: true },
-  { id: "injury60", name: "Injury Recovery Massage Therapy - 60 min", duration: 1, price: 110, staff_pay: 30, member_allowed: true, active: true },
-  { id: "injury90", name: "Injury Recovery Massage Therapy - 90 min", duration: 1.5, price: 150, staff_pay: 45, member_allowed: true, active: true },
-  { id: "myo30", name: "Myotherapy-based Muscle Therapy - 30 min", duration: 0.5, price: 85, staff_pay: 15, member_allowed: false, active: true },
-  { id: "myo45", name: "Myotherapy-based Muscle Therapy - 45 min", duration: 0.75, price: 110, staff_pay: 22.5, member_allowed: false, active: true },
-  { id: "myo60", name: "Myotherapy-based Muscle Therapy - 60 min", duration: 1, price: 125, staff_pay: 30, member_allowed: true, active: true },
-  { id: "myo90", name: "Myotherapy-based Muscle Therapy - 90 min", duration: 1.5, price: 165, staff_pay: 45, member_allowed: true, active: true },
-];
+const fallbackSellers = ["Zheng", "Tree", "Yuki", "Nancy", "Front Desk", "Other"];
+const referralSources = ["Google", "Walk-in", "Friend Referral", "Instagram", "Facebook", "Doctor / Clinic", "Other"];
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -97,13 +84,14 @@ function daysUntilBirthday(birthday) {
   return Math.ceil((next - today) / (1000 * 60 * 60 * 24));
 }
 
-function normalizeDbService(s) {
+function normalizeService(s) {
   return {
-    id: s.id,
-    name: s.name,
+    id: String(s.id),
+    name: s.name || "Unnamed Service",
     duration: Number(s.duration || 1),
-    price: Number(s.price || 0),
-    staff_pay: Number(s.staff_pay || Number(s.duration || 1) * STAFF_HOUR),
+    normal_price: Number(s.normal_price ?? s.price ?? 0),
+    member_price: Number(s.member_price ?? s.normal_price ?? s.price ?? 0),
+    staff_pay: Number(s.staff_pay || 0),
     member_allowed: Boolean(s.member_allowed),
     active: s.active !== false,
   };
@@ -116,8 +104,11 @@ export default function App() {
 
   const [members, setMembers] = useState([]);
   const [checkouts, setCheckouts] = useState([]);
-  const [serviceItems, setServiceItems] = useState(defaultServices);
-  const [sellers, setSellers] = useState(defaultSellers);
+  const [services, setServices] = useState(fallbackServices);
+  const [sellers, setSellers] = useState(fallbackSellers);
+  const [membershipFee, setMembershipFee] = useState(100);
+  const [membershipFeeInput, setMembershipFeeInput] = useState("100");
+  const [sellerInput, setSellerInput] = useState("");
   const [loading, setLoading] = useState(false);
 
   const [memberSearch, setMemberSearch] = useState("");
@@ -144,9 +135,6 @@ export default function App() {
     service_id: "",
     therapist: "",
     payment_method: "Cash",
-    manual_price: "",
-    discount_type: "$",
-    discount_value: 0,
     price_note: "",
   });
 
@@ -154,22 +142,16 @@ export default function App() {
     id: "",
     name: "",
     duration: 1,
-    price: "",
+    normal_price: "",
+    member_price: "",
     staff_pay: "",
     member_allowed: true,
     active: true,
   });
 
-  const [sellerForm, setSellerForm] = useState("");
-
   const barcodeRef = useRef(null);
 
-  const activeServices = useMemo(
-    () => serviceItems.filter((s) => s.active !== false),
-    [serviceItems]
-  );
-
-  const therapists = useMemo(() => sellers, [sellers]);
+  const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
 
   function handleViewModeChange(value) {
     if (value === "owner") {
@@ -184,34 +166,37 @@ export default function App() {
     }
   }
 
-  async function loadServiceItems() {
+  async function loadSettings() {
     if (!supabase) return;
-    const { data, error } = await supabase
+
+    const { data: serviceData, error: serviceErr } = await supabase
       .from("service_items")
       .select("*")
       .order("name", { ascending: true });
 
-    if (error) {
-      console.warn("service_items not loaded. Using default services.", error.message);
-      return;
+    if (!serviceErr && serviceData?.length) {
+      setServices(serviceData.map(normalizeService));
     }
 
-    if (data?.length) setServiceItems(data.map(normalizeDbService));
-  }
-
-  async function loadSellers() {
-    if (!supabase) return;
-    const { data, error } = await supabase
+    const { data: sellerData, error: sellerErr } = await supabase
       .from("sales_people")
       .select("*")
       .order("name", { ascending: true });
 
-    if (error) {
-      console.warn("sales_people not loaded. Using default sellers.", error.message);
-      return;
+    if (!sellerErr && sellerData?.length) {
+      setSellers(sellerData.filter((x) => x.active !== false).map((x) => x.name));
     }
 
-    if (data?.length) setSellers(data.map((x) => x.name));
+    const { data: settingData, error: settingErr } = await supabase
+      .from("system_settings")
+      .select("*")
+      .eq("key", "membership_fee")
+      .maybeSingle();
+
+    if (!settingErr && settingData?.value) {
+      setMembershipFee(Number(settingData.value || 100));
+      setMembershipFeeInput(String(settingData.value || "100"));
+    }
   }
 
   async function loadData() {
@@ -226,11 +211,11 @@ export default function App() {
     const { data: cData, error: cErr } = await supabase
       .from("checkouts")
       .select("*")
+      .eq("deleted", false)
       .order("created_at", { ascending: false })
       .limit(1000);
 
-    await loadServiceItems();
-    await loadSellers();
+    await loadSettings();
 
     if (mErr || cErr) {
       alert("Supabase loading error. Please check SQL fields.");
@@ -286,6 +271,40 @@ export default function App() {
     );
   }, [members, checkoutSearch]);
 
+  const selectedService = services.find((s) => s.id === checkoutForm.service_id);
+  const selectedMember = members.find((m) => m.id === checkoutForm.member_id);
+
+  const pricePreview = useMemo(() => {
+    if (!selectedService) return null;
+
+    const isMember = Boolean(selectedMember);
+    const expired = selectedMember ? new Date(selectedMember.expiry_date) < new Date(todayDate()) : false;
+
+    let finalPrice = Number(selectedService.normal_price || 0);
+    let note = "Guest / normal price applied.";
+
+    if (isMember && !expired && selectedService.member_allowed) {
+      finalPrice = Number(selectedService.member_price || selectedService.normal_price || 0);
+      note = "Member price applied.";
+    } else if (isMember && expired) {
+      note = "Member expired. Normal price applied.";
+    } else if (isMember && !selectedService.member_allowed) {
+      note = "This service is not eligible for member price.";
+    }
+
+    const staffPay = Number(selectedService.staff_pay || 0);
+    const shopProfit = finalPrice - staffPay;
+
+    return {
+      normalPrice: Number(selectedService.normal_price || 0),
+      memberPrice: Number(selectedService.member_price || 0),
+      finalPrice,
+      staffPay,
+      shopProfit,
+      note,
+    };
+  }, [selectedService, selectedMember]);
+
   const existingMemberWarning = useMemo(() => {
     const phone = memberForm.phone.trim();
     const email = memberForm.email.trim().toLowerCase();
@@ -301,76 +320,12 @@ export default function App() {
     );
   }, [members, memberForm]);
 
-  const selectedService = serviceItems.find((s) => s.id === checkoutForm.service_id);
-  const selectedMember = members.find((m) => m.id === checkoutForm.member_id);
-
-  const pricePreview = useMemo(() => {
-    if (!selectedService) return null;
-
-    const isMember = Boolean(selectedMember);
-    const expired = selectedMember
-      ? new Date(selectedMember.expiry_date) < new Date(todayDate())
-      : false;
-
-    let basePrice = Number(selectedService.price || 0);
-    let note = "Guest / normal price applied.";
-
-    if (isMember && !expired && selectedService.member_allowed) {
-      basePrice = Number(selectedService.duration || 1) * MEMBER_HOUR;
-      note = "Member price applied.";
-    } else if (isMember && expired) {
-      note = "Member expired. Normal price applied.";
-    } else if (isMember && !selectedService.member_allowed) {
-      note = "Member price only applies to selected eligible services.";
-    }
-
-    let finalPrice = basePrice;
-    let priceOverride = false;
-
-    if (isOwner && checkoutForm.manual_price !== "") {
-      finalPrice = Number(checkoutForm.manual_price || 0);
-      priceOverride = true;
-      note = "Owner manual price applied.";
-    } else if (isOwner && Number(checkoutForm.discount_value || 0) > 0) {
-      const discountValue = Number(checkoutForm.discount_value || 0);
-      let discountAmount = 0;
-
-      if (checkoutForm.discount_type === "%") {
-        discountAmount = basePrice * (discountValue / 100);
-        note = `Owner ${discountValue}% discount applied.`;
-      } else {
-        discountAmount = discountValue;
-        note = `Owner $${money(discountValue)} discount applied.`;
-      }
-
-      finalPrice = Math.max(0, basePrice - discountAmount);
-      priceOverride = true;
-    }
-
-    const staffPay = Number(selectedService.staff_pay ?? Number(selectedService.duration || 1) * STAFF_HOUR);
-    const shopProfit = finalPrice - staffPay;
-
-    return {
-      originalPrice: Number(selectedService.price || 0),
-      basePrice,
-      finalPrice,
-      staffPay,
-      shopProfit,
-      discountType: checkoutForm.discount_type,
-      discountValue: Number(checkoutForm.discount_value || 0),
-      priceOverride,
-      note,
-    };
-  }, [selectedService, selectedMember, checkoutForm, isOwner]);
-
   const analytics = useMemo(() => {
     const today = todayDate();
     const thisMonth = today.slice(0, 7);
-
     const activeMembers = members.filter((m) => new Date(m.expiry_date) >= new Date(today));
     const expiredMembers = members.filter((m) => new Date(m.expiry_date) < new Date(today));
     const newThisMonth = members.filter((m) => m.join_date?.slice(0, 7) === thisMonth);
-
     const todayCheckouts = checkouts.filter((c) => c.created_at?.slice(0, 10) === today);
     const monthCheckouts = checkouts.filter((c) => c.created_at?.slice(0, 7) === thisMonth);
 
@@ -393,15 +348,11 @@ export default function App() {
     });
 
     const therapistRevenue = {};
+    const therapistCount = {};
     checkouts.forEach((c) => {
       const name = c.therapist || "Not set";
       therapistRevenue[name] = (therapistRevenue[name] || 0) + Number(c.final_price || 0);
-    });
-
-    const serviceRevenue = {};
-    checkouts.forEach((c) => {
-      const name = c.service_name || "Not set";
-      serviceRevenue[name] = (serviceRevenue[name] || 0) + Number(c.final_price || 0);
+      therapistCount[name] = (therapistCount[name] || 0) + 1;
     });
 
     const upcomingBirthdays = members
@@ -427,11 +378,12 @@ export default function App() {
       todayProfit: todayCheckouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0),
       todayCount: todayCheckouts.length,
       monthRevenue: monthCheckouts.reduce((s, x) => s + Number(x.final_price || 0), 0),
+      monthProfit: monthCheckouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0),
       groupCounts,
       suburbCounts,
       sellerCounts,
       therapistRevenue,
-      serviceRevenue,
+      therapistCount,
       upcomingBirthdays,
       expiringSoon,
     };
@@ -443,9 +395,7 @@ export default function App() {
     if (!memberForm.full_name.trim()) return alert("Please enter member name.");
 
     if (existingMemberWarning) {
-      const ok = confirm(
-        `Possible existing member found: ${existingMemberWarning.full_name}. Continue creating new member?`
-      );
+      const ok = confirm(`Possible existing member found: ${existingMemberWarning.full_name}. Continue creating new member?`);
       if (!ok) return;
     }
 
@@ -456,9 +406,8 @@ export default function App() {
       phone: memberForm.phone.trim(),
       email: memberForm.email.trim(),
       suburb: memberForm.suburb.trim(),
-      sold_by: memberForm.sold_by || "",
       join_date: todayDate(),
-      membership_fee: YEAR_FEE,
+      membership_fee: Number(membershipFee || 100),
       status: "active",
     };
 
@@ -488,11 +437,7 @@ export default function App() {
   async function renewMember(member) {
     const { error } = await supabase
       .from("members")
-      .update({
-        expiry_date: expiryOneYear(),
-        status: "active",
-        membership_fee: YEAR_FEE,
-      })
+      .update({ expiry_date: expiryOneYear(), status: "active", membership_fee: Number(membershipFee || 100) })
       .eq("id", member.id);
 
     if (error) return alert(error.message);
@@ -503,10 +448,8 @@ export default function App() {
   async function deleteMember(member) {
     if (!isOwner) return alert("Only owner can delete members.");
     if (!confirm(`Delete member ${member.full_name}?`)) return;
-
     const { error } = await supabase.from("members").delete().eq("id", member.id);
     if (error) return alert(error.message);
-
     await loadData();
   }
 
@@ -528,39 +471,23 @@ export default function App() {
       customer_type: isGuest ? "guest" : "member",
       service_name: selectedService.name,
       duration: selectedService.duration,
-      original_price: pricePreview.originalPrice,
+      original_price: pricePreview.normalPrice,
       final_price: pricePreview.finalPrice,
       staff_pay: pricePreview.staffPay,
       shop_profit: pricePreview.shopProfit,
       payment_method: checkoutForm.payment_method,
       therapist: checkoutForm.therapist,
       customer_suburb: selectedMember?.suburb || "",
-      discount_amount: isOwner
-        ? pricePreview.discountType === "%"
-          ? pricePreview.basePrice * (pricePreview.discountValue / 100)
-          : pricePreview.discountValue
-        : 0,
-      discount_type: isOwner ? pricePreview.discountType : "$",
-      discount_value: isOwner ? pricePreview.discountValue : 0,
-      price_override: isOwner ? pricePreview.priceOverride : false,
-      price_note: isOwner ? checkoutForm.price_note : "",
+      price_note: checkoutForm.price_note || pricePreview.note,
+      service_price: pricePreview.finalPrice,
+      deleted: false,
     };
 
     const { error } = await supabase.from("checkouts").insert(payload);
     if (error) return alert(error.message);
 
-    setCheckoutForm({
-      member_id: "guest",
-      service_id: "",
-      therapist: "",
-      payment_method: "Cash",
-      manual_price: "",
-      discount_type: "$",
-      discount_value: 0,
-      price_note: "",
-    });
+    setCheckoutForm({ member_id: "guest", service_id: "", therapist: "", payment_method: "Cash", price_note: "" });
     setCheckoutSearch("");
-
     await loadData();
     alert("Checkout saved.");
   }
@@ -569,9 +496,8 @@ export default function App() {
     if (!isOwner) return alert("Only owner can delete records.");
     if (!confirm(`Delete checkout record for ${row.customer_name || "customer"}?`)) return;
 
-    const { error } = await supabase.from("checkouts").delete().eq("id", row.id);
+    const { error } = await supabase.from("checkouts").update({ deleted: true }).eq("id", row.id);
     if (error) return alert(error.message);
-
     await loadData();
   }
 
@@ -584,33 +510,17 @@ export default function App() {
       id: serviceForm.id || makeServiceId(),
       name: serviceForm.name.trim(),
       duration: Number(serviceForm.duration || 1),
-      price: Number(serviceForm.price || 0),
-      staff_pay: Number(serviceForm.staff_pay || Number(serviceForm.duration || 1) * STAFF_HOUR),
+      normal_price: Number(serviceForm.normal_price || 0),
+      member_price: Number(serviceForm.member_price || 0),
+      staff_pay: Number(serviceForm.staff_pay || 0),
       member_allowed: Boolean(serviceForm.member_allowed),
       active: Boolean(serviceForm.active),
     };
 
-    if (supabase) {
-      const { error } = await supabase.from("service_items").upsert(payload);
-      if (error) return alert(error.message);
-    }
+    const { error } = await supabase.from("service_items").upsert(payload);
+    if (error) return alert(error.message);
 
-    setServiceItems((prev) => {
-      const exists = prev.some((s) => s.id === payload.id);
-      if (exists) return prev.map((s) => (s.id === payload.id ? payload : s));
-      return [...prev, payload];
-    });
-
-    setServiceForm({
-      id: "",
-      name: "",
-      duration: 1,
-      price: "",
-      staff_pay: "",
-      member_allowed: true,
-      active: true,
-    });
-
+    setServiceForm({ id: "", name: "", duration: 1, normal_price: "", member_price: "", staff_pay: "", member_allowed: true, active: true });
     await loadData();
   }
 
@@ -619,52 +529,55 @@ export default function App() {
       id: s.id,
       name: s.name,
       duration: s.duration,
-      price: s.price,
+      normal_price: s.normal_price,
+      member_price: s.member_price,
       staff_pay: s.staff_pay,
       member_allowed: s.member_allowed,
       active: s.active !== false,
     });
   }
 
-  async function deleteService(s) {
-    if (!isOwner) return alert("Only owner can delete services.");
-    if (!confirm(`Delete service: ${s.name}?`)) return;
-
-    if (supabase) {
-      const { error } = await supabase.from("service_items").delete().eq("id", s.id);
-      if (error) return alert(error.message);
-    }
-
-    setServiceItems((prev) => prev.filter((x) => x.id !== s.id));
+  async function disableService(s) {
+    if (!isOwner) return;
+    const { error } = await supabase.from("service_items").update({ active: !s.active }).eq("id", s.id);
+    if (error) return alert(error.message);
     await loadData();
+  }
+
+  async function deleteService(s) {
+    if (!isOwner) return;
+    if (!confirm(`Delete service: ${s.name}?`)) return;
+    const { error } = await supabase.from("service_items").delete().eq("id", s.id);
+    if (error) return alert(error.message);
+    await loadData();
+  }
+
+  async function saveMembershipFee(e) {
+    e.preventDefault();
+    if (!isOwner) return;
+    const value = String(Number(membershipFeeInput || 0));
+    const { error } = await supabase.from("system_settings").upsert({ key: "membership_fee", value });
+    if (error) return alert(error.message);
+    setMembershipFee(Number(value));
+    alert("Membership fee updated.");
   }
 
   async function addSeller(e) {
     e.preventDefault();
-    if (!isOwner) return alert("Only owner can manage seller names.");
-    const name = sellerForm.trim();
+    if (!isOwner) return;
+    const name = sellerInput.trim();
     if (!name) return;
-
-    if (supabase) {
-      const { error } = await supabase.from("sales_people").upsert({ name });
-      if (error) return alert(error.message);
-    }
-
-    setSellers((prev) => (prev.includes(name) ? prev : [...prev, name]));
-    setSellerForm("");
+    const { error } = await supabase.from("sales_people").upsert({ name, active: true });
+    if (error) return alert(error.message);
+    setSellerInput("");
     await loadData();
   }
 
   async function deleteSeller(name) {
-    if (!isOwner) return alert("Only owner can manage seller names.");
-    if (!confirm(`Delete seller name: ${name}?`)) return;
-
-    if (supabase) {
-      const { error } = await supabase.from("sales_people").delete().eq("name", name);
-      if (error) return alert(error.message);
-    }
-
-    setSellers((prev) => prev.filter((x) => x !== name));
+    if (!isOwner) return;
+    if (!confirm(`Remove seller: ${name}?`)) return;
+    const { error } = await supabase.from("sales_people").delete().eq("name", name);
+    if (error) return alert(error.message);
     await loadData();
   }
 
@@ -680,7 +593,7 @@ export default function App() {
       Gender: m.gender,
       "Referral Source": m.referral_source,
       "Sold By": m.sold_by,
-      "Home Store": m.home_store,
+      "Membership Fee": m.membership_fee,
       "Join Date": m.join_date,
       "Expiry Date": m.expiry_date,
       Status: new Date(m.expiry_date) >= new Date(todayDate()) ? "Active" : "Expired",
@@ -694,36 +607,9 @@ export default function App() {
 
   function downloadCRMExcel() {
     const wb = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(Object.entries(analytics.groupCounts).map(([AgeGroup, Members]) => ({ AgeGroup, Members }))),
-      "Age Groups"
-    );
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(Object.entries(analytics.suburbCounts).map(([Suburb, Members]) => ({ Suburb, Members }))),
-      "Suburbs"
-    );
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(Object.entries(analytics.sellerCounts).map(([Seller, CardsSold]) => ({ Seller, CardsSold }))),
-      "Seller Performance"
-    );
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(analytics.upcomingBirthdays.map((m) => ({
-        Name: m.full_name,
-        Phone: m.phone,
-        Birthday: m.birthday,
-        Days: m.days,
-      }))),
-      "Birthdays"
-    );
-
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(analytics.groupCounts).map(([AgeGroup, Members]) => ({ AgeGroup, Members }))), "Age Groups");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(analytics.suburbCounts).map(([Suburb, Members]) => ({ Suburb, Members }))), "Suburbs");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(analytics.sellerCounts).map(([Seller, CardsSold]) => ({ Seller, CardsSold }))), "Seller Performance");
     XLSX.writeFile(wb, `YOHOME_CRM_Analytics_${todayDate()}.xlsx`);
   }
 
@@ -759,25 +645,17 @@ export default function App() {
   function downloadMembersPDF() {
     const doc = new jsPDF();
     doc.text("YOHOME Membership List", 14, 15);
-
     autoTable(doc, {
       startY: 22,
-      head: [["Card", "Name", "Phone", "Email", "Birthday", "Suburb", "Sold By", "Join", "Expiry"]],
-      body: members.map((m) => [
-        m.card_id || "",
-        m.full_name || "",
-        m.phone || "",
-        m.email || "",
-        m.birthday || "",
-        m.suburb || "",
-        m.sold_by || "",
-        m.join_date || "",
-        m.expiry_date || "",
-      ]),
+      head: [["Card", "Name", "Phone", "Email", "Suburb", "Sold By", "Join", "Expiry"]],
+      body: members.map((m) => [m.card_id || "", m.full_name || "", m.phone || "", m.email || "", m.suburb || "", m.sold_by || "", m.join_date || "", m.expiry_date || ""]),
     });
-
     doc.save(`YOHOME_Members_${todayDate()}.pdf`);
   }
+
+  const menu = isOwner
+    ? ["dashboard", "members", "checkout", "services", "staff", "analytics", "reports", "settings"]
+    : ["dashboard", "members", "checkout"];
 
   return (
     <div className="app">
@@ -793,7 +671,7 @@ export default function App() {
           </select>
         </div>
 
-        {["dashboard", "members", "checkout", "analytics", "reports", "services"].map((x) => (
+        {menu.map((x) => (
           <button key={x} onClick={() => setTab(x)} className={tab === x ? "active" : ""}>
             {x.charAt(0).toUpperCase() + x.slice(1)}
           </button>
@@ -806,7 +684,7 @@ export default function App() {
         <div className="topbar">
           <div>
             <h2>{tab.toUpperCase()}</h2>
-            <span>{isOwner ? "Owner view: full CRM, export and finance" : "Staff view: profit hidden"}</span>
+            <span>{isOwner ? "Owner view: full finance and settings" : "Staff view: prices only, profit hidden"}</span>
           </div>
           <button onClick={loadData}>Refresh</button>
         </div>
@@ -819,24 +697,19 @@ export default function App() {
               <Card title="Total Members" value={analytics.totalMembers} />
               <Card title="Active Members" value={analytics.activeMembers} />
               <Card title="Expired Members" value={analytics.expiredMembers} />
-              <Card title="New This Month" value={analytics.newThisMonth} />
-              <Card title="Today Income" value={`$${money(analytics.todayIncome)}`} />
               <Card title="Today Checkouts" value={analytics.todayCount} />
+              {isOwner && <Card title="Today Income" value={`$${money(analytics.todayIncome)}`} />}
               {isOwner && <Card title="Today Profit" value={`$${money(analytics.todayProfit)}`} />}
               {isOwner && <Card title="Monthly Revenue" value={`$${money(analytics.monthRevenue)}`} />}
+              {isOwner && <Card title="Monthly Profit" value={`$${money(analytics.monthProfit)}`} />}
             </div>
 
             <div className="grid-two">
               <MiniPanel title="Upcoming Birthdays">
-                {analytics.upcomingBirthdays.length ? analytics.upcomingBirthdays.map((m) => (
-                  <p key={m.id}>{m.full_name} · {m.birthday} · {m.days} days</p>
-                )) : <p>No birthdays in 30 days.</p>}
+                {analytics.upcomingBirthdays.length ? analytics.upcomingBirthdays.map((m) => <p key={m.id}>{m.full_name} · {m.birthday} · {m.days} days</p>) : <p>No birthdays in 30 days.</p>}
               </MiniPanel>
-
               <MiniPanel title="Expiring Soon">
-                {analytics.expiringSoon.length ? analytics.expiringSoon.map((m) => (
-                  <p key={m.id}>{m.full_name} · expires in {m.daysLeft} days</p>
-                )) : <p>No memberships expiring soon.</p>}
+                {analytics.expiringSoon.length ? analytics.expiringSoon.map((m) => <p key={m.id}>{m.full_name} · expires in {m.daysLeft} days</p>) : <p>No memberships expiring soon.</p>}
               </MiniPanel>
             </div>
           </>
@@ -849,22 +722,16 @@ export default function App() {
               <form onSubmit={addMember} className="form">
                 <label>Card ID</label>
                 <input placeholder="Leave blank for auto ID" value={memberForm.card_id} onChange={(e) => setMemberForm({ ...memberForm, card_id: e.target.value })} />
-
                 <label>Full Name</label>
                 <input value={memberForm.full_name} onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })} />
-
                 <label>Phone</label>
                 <input value={memberForm.phone} onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })} />
-
                 <label>Email</label>
                 <input value={memberForm.email} onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })} />
-
                 <label>Date of Birth</label>
                 <input type="date" value={memberForm.birthday} onChange={(e) => setMemberForm({ ...memberForm, birthday: e.target.value })} />
-
                 <label>Suburb / Area</label>
                 <input placeholder="e.g. Abbotsford, Richmond, Kew" value={memberForm.suburb} onChange={(e) => setMemberForm({ ...memberForm, suburb: e.target.value })} />
-
                 <label>Gender</label>
                 <select value={memberForm.gender} onChange={(e) => setMemberForm({ ...memberForm, gender: e.target.value })}>
                   <option value="">Prefer not to say</option>
@@ -872,48 +739,35 @@ export default function App() {
                   <option>Male</option>
                   <option>Other</option>
                 </select>
-
                 <label>Referral Source</label>
                 <select value={memberForm.referral_source} onChange={(e) => setMemberForm({ ...memberForm, referral_source: e.target.value })}>
                   <option value="">Select</option>
                   {referralSources.map((x) => <option key={x}>{x}</option>)}
                 </select>
-
                 <label>Sold By / Card Seller</label>
                 <select value={memberForm.sold_by} onChange={(e) => setMemberForm({ ...memberForm, sold_by: e.target.value })}>
                   <option value="">Select seller</option>
                   {sellers.map((x) => <option key={x}>{x}</option>)}
                 </select>
-
                 <label>Expiry Date</label>
                 <input type="date" value={memberForm.expiry_date} onChange={(e) => setMemberForm({ ...memberForm, expiry_date: e.target.value })} />
-
                 <label>Payment Method</label>
                 <select value={memberForm.payment_method} onChange={(e) => setMemberForm({ ...memberForm, payment_method: e.target.value })}>
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
                 </select>
-
                 <label>Notes</label>
                 <textarea value={memberForm.notes} onChange={(e) => setMemberForm({ ...memberForm, notes: e.target.value })} />
-
-                {existingMemberWarning && (
-                  <div className="warningBox">
-                    Possible existing member: {existingMemberWarning.full_name} · {existingMemberWarning.phone} · {existingMemberWarning.card_id}
-                  </div>
-                )}
-
-                <button className="primary">Save Member - ${YEAR_FEE}</button>
+                {existingMemberWarning && <div className="warningBox">Possible existing member: {existingMemberWarning.full_name} · {existingMemberWarning.phone} · {existingMemberWarning.card_id}</div>}
+                <button className="primary">Save Member - ${money(membershipFee)}</button>
               </form>
-
               {memberForm.card_id && <div className="barcodeBox"><svg ref={barcodeRef}></svg></div>}
             </section>
 
             <section className="panel">
               <h3>Member Search</h3>
               <input className="search" placeholder="Search name / phone / email / suburb / card ID / seller" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} />
-
               <div className="memberList">
                 {filteredMembers.map((m) => {
                   const expired = new Date(m.expiry_date) < new Date(todayDate());
@@ -942,73 +796,51 @@ export default function App() {
               <h3>Service Checkout</h3>
               <label>Search Member</label>
               <input className="search" placeholder="Phone / Card ID / Name / Email" value={checkoutSearch} onChange={(e) => setCheckoutSearch(e.target.value)} />
-
               {checkoutSearchResults.length > 0 && (
                 <div className="searchDropdown">
-                  {checkoutSearchResults.map((m) => (
-                    <div key={m.id} onClick={() => selectCheckoutMember(m)}>{m.full_name} · {m.phone || "No phone"} · {m.card_id}</div>
-                  ))}
+                  {checkoutSearchResults.map((m) => <div key={m.id} onClick={() => selectCheckoutMember(m)}>{m.full_name} · {m.phone || "No phone"} · {m.card_id}</div>)}
                 </div>
               )}
-
               <form onSubmit={saveCheckout} className="form">
                 <label>Customer</label>
                 <select value={checkoutForm.member_id} onChange={(e) => setCheckoutForm({ ...checkoutForm, member_id: e.target.value })}>
                   <option value="guest">Guest</option>
                   {members.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.phone || ""} · {m.card_id}</option>)}
                 </select>
-
                 <label>Service</label>
                 <select value={checkoutForm.service_id} onChange={(e) => setCheckoutForm({ ...checkoutForm, service_id: e.target.value })}>
                   <option value="">Select service</option>
                   {activeServices.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-
                 <label>Therapist</label>
                 <select value={checkoutForm.therapist} onChange={(e) => setCheckoutForm({ ...checkoutForm, therapist: e.target.value })}>
                   <option value="">Select</option>
-                  {therapists.map((x) => <option key={x}>{x}</option>)}
+                  {sellers.map((x) => <option key={x}>{x}</option>)}
                 </select>
-
                 <label>Payment</label>
                 <select value={checkoutForm.payment_method} onChange={(e) => setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })}>
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
                 </select>
-
                 {isOwner && (
                   <>
-                    <label>Manual Price</label>
-                    <input type="number" placeholder="Optional owner price" value={checkoutForm.manual_price} onChange={(e) => setCheckoutForm({ ...checkoutForm, manual_price: e.target.value })} />
-
-                    <label>Discount Type</label>
-                    <select value={checkoutForm.discount_type} onChange={(e) => setCheckoutForm({ ...checkoutForm, discount_type: e.target.value })}>
-                      <option value="$">$ Fixed Amount</option>
-                      <option value="%">% Percentage</option>
-                    </select>
-
-                    <label>Discount Value</label>
-                    <input type="number" value={checkoutForm.discount_value} onChange={(e) => setCheckoutForm({ ...checkoutForm, discount_value: e.target.value })} />
-
-                    <label>Price Note</label>
+                    <label>Owner Note</label>
                     <input value={checkoutForm.price_note} onChange={(e) => setCheckoutForm({ ...checkoutForm, price_note: e.target.value })} />
                   </>
                 )}
-
                 {pricePreview && (
                   <div className="priceBox">
-                    <p>Base Price: ${money(pricePreview.basePrice)}</p>
+                    {isOwner && <p>Normal Price: ${money(pricePreview.normalPrice)}</p>}
+                    {isOwner && <p>Member Price: ${money(pricePreview.memberPrice)}</p>}
                     <p>Final Price: ${money(pricePreview.finalPrice)}</p>
                     {isOwner && <><p>Staff Pay: ${money(pricePreview.staffPay)}</p><p>Profit: ${money(pricePreview.shopProfit)}</p></>}
                     <strong>{pricePreview.note}</strong>
                   </div>
                 )}
-
                 <button className="primary">Confirm Checkout</button>
               </form>
             </section>
-
             <section className="panel">
               <h3>Latest Records</h3>
               <TableCheckouts rows={checkouts.slice(0, 20)} isOwner={isOwner} onDelete={deleteCheckout} />
@@ -1016,156 +848,96 @@ export default function App() {
           </div>
         )}
 
-        {tab === "analytics" && (
-          <div className="grid-two">
-            <MiniPanel title="Age Group Analysis">
-              <SimpleTable data={Object.entries(analytics.groupCounts)} headers={["Age Group", "Members"]} />
-            </MiniPanel>
-
-            <MiniPanel title="Suburb / Area Analysis">
-              <SimpleTable data={Object.entries(analytics.suburbCounts)} headers={["Suburb", "Members"]} />
-            </MiniPanel>
-
-            {isOwner && (
-              <MiniPanel title="Membership Sold By">
-                <SimpleTable data={Object.entries(analytics.sellerCounts)} headers={["Seller", "Cards Sold"]} />
-              </MiniPanel>
-            )}
-
-            {isOwner && (
-              <MiniPanel title="Revenue by Therapist">
-                <SimpleTable data={Object.entries(analytics.therapistRevenue).map(([k, v]) => [k, `$${money(v)}`])} headers={["Therapist", "Revenue"]} />
-              </MiniPanel>
-            )}
-
-            {isOwner && (
-              <MiniPanel title="Revenue by Service">
-                <SimpleTable data={Object.entries(analytics.serviceRevenue).map(([k, v]) => [k, `$${money(v)}`])} headers={["Service", "Revenue"]} />
-              </MiniPanel>
-            )}
-
-            <MiniPanel title="Upcoming Birthdays">
-              <SimpleTable data={analytics.upcomingBirthdays.map((m) => [m.full_name, m.birthday, `${m.days} days`])} headers={["Name", "Birthday", "Remaining"]} />
-            </MiniPanel>
-          </div>
-        )}
-
-        {tab === "reports" && (
-          <section className="panel">
-            <h3>Reports & Backup</h3>
-
-            {isOwner ? (
-              <div className="exportBtns">
-                <button onClick={downloadMembersExcel}>Download Members Excel</button>
-                <button onClick={downloadMembersPDF}>Download Members PDF</button>
-                <button onClick={downloadCRMExcel}>Download CRM Excel</button>
-                <button onClick={downloadIncomePDF}>Download Income Report PDF</button>
-              </div>
-            ) : (
-              <div className="notice">Staff view: export and profit report are hidden.</div>
-            )}
-
-            <TableCheckouts rows={checkouts} isOwner={isOwner} onDelete={deleteCheckout} />
-          </section>
-        )}
-
-        {tab === "services" && (
+        {tab === "services" && isOwner && (
           <div className="grid-two">
             <section className="panel">
-              <h3>Service Settings</h3>
-              {isOwner ? (
-                <form onSubmit={saveService} className="form">
-                  <label>Service Name</label>
-                  <input value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} />
-
-                  <label>Duration / Hours</label>
-                  <input type="number" step="0.25" value={serviceForm.duration} onChange={(e) => setServiceForm({ ...serviceForm, duration: e.target.value })} />
-
-                  <label>Normal Price</label>
-                  <input type="number" value={serviceForm.price} onChange={(e) => setServiceForm({ ...serviceForm, price: e.target.value })} />
-
-                  <label>Staff Pay</label>
-                  <input type="number" value={serviceForm.staff_pay} onChange={(e) => setServiceForm({ ...serviceForm, staff_pay: e.target.value })} />
-
-                  <label>Member Price Allowed?</label>
-                  <select value={String(serviceForm.member_allowed)} onChange={(e) => setServiceForm({ ...serviceForm, member_allowed: e.target.value === "true" })}>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-
-                  <label>Status</label>
-                  <select value={String(serviceForm.active)} onChange={(e) => setServiceForm({ ...serviceForm, active: e.target.value === "true" })}>
-                    <option value="true">Active</option>
-                    <option value="false">Inactive</option>
-                  </select>
-
-                  <button className="primary">{serviceForm.id ? "Update Service" : "Add Service"}</button>
-                </form>
-              ) : (
-                <div className="notice">Staff view: service settings hidden.</div>
-              )}
+              <h3>Service Management</h3>
+              <form onSubmit={saveService} className="form">
+                <label>Service Name</label>
+                <input value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} />
+                <label>Duration / Hours</label>
+                <input type="number" step="0.25" value={serviceForm.duration} onChange={(e) => setServiceForm({ ...serviceForm, duration: e.target.value })} />
+                <label>Normal Price</label>
+                <input type="number" value={serviceForm.normal_price} onChange={(e) => setServiceForm({ ...serviceForm, normal_price: e.target.value })} />
+                <label>Member Price</label>
+                <input type="number" value={serviceForm.member_price} onChange={(e) => setServiceForm({ ...serviceForm, member_price: e.target.value })} />
+                <label>Staff Pay</label>
+                <input type="number" value={serviceForm.staff_pay} onChange={(e) => setServiceForm({ ...serviceForm, staff_pay: e.target.value })} />
+                <label>Member Price Allowed?</label>
+                <select value={String(serviceForm.member_allowed)} onChange={(e) => setServiceForm({ ...serviceForm, member_allowed: e.target.value === "true" })}>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+                <label>Status</label>
+                <select value={String(serviceForm.active)} onChange={(e) => setServiceForm({ ...serviceForm, active: e.target.value === "true" })}>
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <button className="primary">{serviceForm.id ? "Update Service" : "Add Service"}</button>
+              </form>
             </section>
-
             <section className="panel">
               <h3>Current Services</h3>
-              <div className="tableWrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Service</th>
-                      <th>Hours</th>
-                      <th>Price</th>
-                      <th>Staff</th>
-                      <th>Member</th>
-                      <th>Status</th>
-                      {isOwner && <th>Action</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {serviceItems.map((s) => (
-                      <tr key={s.id}>
-                        <td>{s.name}</td>
-                        <td>{s.duration}</td>
-                        <td>${money(s.price)}</td>
-                        <td>${money(s.staff_pay)}</td>
-                        <td>{s.member_allowed ? "Yes" : "No"}</td>
-                        <td>{s.active ? "Active" : "Inactive"}</td>
-                        {isOwner && (
-                          <td className="rowBtns">
-                            <button onClick={() => editService(s)}>Edit</button>
-                            <button className="danger" onClick={() => deleteService(s)}>Delete</button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ServiceTable services={services} onEdit={editService} onToggle={disableService} onDelete={deleteService} />
             </section>
+          </div>
+        )}
 
+        {tab === "settings" && isOwner && (
+          <div className="grid-two">
             <section className="panel">
-              <h3>Seller / Card Sales Names</h3>
-              {isOwner ? (
-                <form onSubmit={addSeller} className="form">
-                  <label>Add Seller Name</label>
-                  <input value={sellerForm} onChange={(e) => setSellerForm(e.target.value)} placeholder="e.g. Tree, Nancy, Front Desk" />
-                  <button className="primary">Add Seller</button>
-                </form>
-              ) : <div className="notice">Staff view: seller settings hidden.</div>}
+              <h3>Membership Fee Setting</h3>
+              <form onSubmit={saveMembershipFee} className="form">
+                <label>Current Membership Fee</label>
+                <input type="number" value={membershipFeeInput} onChange={(e) => setMembershipFeeInput(e.target.value)} />
+                <button className="primary">Save Membership Fee</button>
+              </form>
             </section>
-
             <section className="panel">
-              <h3>Current Sellers</h3>
+              <h3>Seller / Therapist Names</h3>
+              <form onSubmit={addSeller} className="form">
+                <label>Add Name</label>
+                <input value={sellerInput} onChange={(e) => setSellerInput(e.target.value)} placeholder="e.g. Cedrick, Nice" />
+                <button className="primary">Add Name</button>
+              </form>
               <div className="memberList">
-                {sellers.map((name) => (
-                  <div className="memberItem" key={name}>
-                    <strong>{name}</strong>
-                    {isOwner && <div className="rowBtns"><button className="danger" onClick={() => deleteSeller(name)}>Delete</button></div>}
-                  </div>
-                ))}
+                {sellers.map((name) => <div className="memberItem" key={name}><strong>{name}</strong><div className="rowBtns"><button className="danger" onClick={() => deleteSeller(name)}>Delete</button></div></div>)}
               </div>
             </section>
           </div>
+        )}
+
+        {tab === "staff" && isOwner && (
+          <div className="grid-two">
+            <MiniPanel title="Therapist Performance">
+              <SimpleTable data={Object.entries(analytics.therapistRevenue).map(([k, v]) => [k, analytics.therapistCount[k] || 0, `$${money(v)}`])} headers={["Therapist", "Checkouts", "Revenue"]} />
+            </MiniPanel>
+            <MiniPanel title="Membership Sold By">
+              <SimpleTable data={Object.entries(analytics.sellerCounts)} headers={["Seller", "Cards Sold"]} />
+            </MiniPanel>
+          </div>
+        )}
+
+        {tab === "analytics" && isOwner && (
+          <div className="grid-two">
+            <MiniPanel title="Age Group Analysis"><SimpleTable data={Object.entries(analytics.groupCounts)} headers={["Age Group", "Members"]} /></MiniPanel>
+            <MiniPanel title="Suburb / Area Analysis"><SimpleTable data={Object.entries(analytics.suburbCounts)} headers={["Suburb", "Members"]} /></MiniPanel>
+            <MiniPanel title="Membership Sold By"><SimpleTable data={Object.entries(analytics.sellerCounts)} headers={["Seller", "Cards Sold"]} /></MiniPanel>
+            <MiniPanel title="Upcoming Birthdays"><SimpleTable data={analytics.upcomingBirthdays.map((m) => [m.full_name, m.birthday, `${m.days} days`])} headers={["Name", "Birthday", "Remaining"]} /></MiniPanel>
+          </div>
+        )}
+
+        {tab === "reports" && isOwner && (
+          <section className="panel">
+            <h3>Reports & Backup</h3>
+            <div className="exportBtns">
+              <button onClick={downloadMembersExcel}>Download Members Excel</button>
+              <button onClick={downloadMembersPDF}>Download Members PDF</button>
+              <button onClick={downloadCRMExcel}>Download CRM Excel</button>
+              <button onClick={downloadIncomePDF}>Download Income Report PDF</button>
+            </div>
+            <TableCheckouts rows={checkouts} isOwner={isOwner} onDelete={deleteCheckout} />
+          </section>
         )}
       </main>
     </div>
@@ -1192,19 +964,39 @@ function SimpleTable({ data, headers }) {
   );
 }
 
+function ServiceTable({ services, onEdit, onToggle, onDelete }) {
+  return (
+    <div className="tableWrap">
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Hours</th><th>Normal</th><th>Member</th><th>Staff</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {services.map((s) => (
+            <tr key={s.id}>
+              <td>{s.name}</td>
+              <td>{s.duration}</td>
+              <td>${money(s.normal_price)}</td>
+              <td>${money(s.member_price)}</td>
+              <td>${money(s.staff_pay)}</td>
+              <td>{s.active ? "Active" : "Inactive"}</td>
+              <td className="rowBtns"><button onClick={() => onEdit(s)}>Edit</button><button onClick={() => onToggle(s)}>{s.active ? "Disable" : "Enable"}</button><button className="danger" onClick={() => onDelete(s)}>Delete</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TableCheckouts({ rows, isOwner, onDelete }) {
   if (!rows?.length) return <p className="empty">No records yet.</p>;
-
   return (
     <div className="tableWrap">
       <table>
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Name</th>
-            <th>Therapist</th>
-            <th>Service</th>
-            <th>Price</th>
+            <th>Date</th><th>Name</th><th>Therapist</th><th>Service</th><th>Price</th>
             {isOwner && <><th>Staff</th><th>Profit</th><th>Payment</th><th>Note</th><th>Action</th></>}
           </tr>
         </thead>
