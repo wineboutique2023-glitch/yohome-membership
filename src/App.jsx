@@ -85,16 +85,37 @@ function daysUntilBirthday(birthday) {
 }
 
 function normalizeService(s) {
+  const normalPrice = Number(s.normal_price ?? s.price ?? 0);
+  const discountType = s.discount_type || "$";
+  const discountValue = Number(s.discount_value || 0);
+  const calculatedMemberPrice =
+    discountType === "%"
+      ? Math.max(0, normalPrice * (1 - discountValue / 100))
+      : Math.max(0, normalPrice - discountValue);
+
   return {
     id: String(s.id),
     name: s.name || "Unnamed Service",
     duration: Number(s.duration || 1),
-    normal_price: Number(s.normal_price ?? s.price ?? 0),
-    member_price: Number(s.member_price ?? s.normal_price ?? s.price ?? 0),
+    normal_price: normalPrice,
+    discount_type: discountType,
+    discount_value: discountValue,
+    member_price: Number(s.member_price ?? calculatedMemberPrice),
     staff_pay: Number(s.staff_pay || 0),
     member_allowed: Boolean(s.member_allowed),
     active: s.active !== false,
   };
+}
+
+function calculateMemberPrice(normalPrice, discountType, discountValue) {
+  const base = Number(normalPrice || 0);
+  const discount = Number(discountValue || 0);
+
+  if (discountType === "%") {
+    return Math.max(0, base * (1 - discount / 100));
+  }
+
+  return Math.max(0, base - discount);
 }
 
 export default function App() {
@@ -143,7 +164,8 @@ export default function App() {
     name: "",
     duration: 1,
     normal_price: "",
-    member_price: "",
+    discount_type: "$",
+    discount_value: "",
     staff_pay: "",
     member_allowed: true,
     active: true,
@@ -506,12 +528,20 @@ export default function App() {
     if (!isOwner) return alert("Only owner can manage services.");
     if (!serviceForm.name.trim()) return alert("Please enter service name.");
 
+    const memberPrice = calculateMemberPrice(
+      serviceForm.normal_price,
+      serviceForm.discount_type,
+      serviceForm.discount_value
+    );
+
     const payload = {
       id: serviceForm.id || makeServiceId(),
       name: serviceForm.name.trim(),
       duration: Number(serviceForm.duration || 1),
       normal_price: Number(serviceForm.normal_price || 0),
-      member_price: Number(serviceForm.member_price || 0),
+      discount_type: serviceForm.discount_type || "$",
+      discount_value: Number(serviceForm.discount_value || 0),
+      member_price: memberPrice,
       staff_pay: Number(serviceForm.staff_pay || 0),
       member_allowed: Boolean(serviceForm.member_allowed),
       active: Boolean(serviceForm.active),
@@ -520,7 +550,7 @@ export default function App() {
     const { error } = await supabase.from("service_items").upsert(payload);
     if (error) return alert(error.message);
 
-    setServiceForm({ id: "", name: "", duration: 1, normal_price: "", member_price: "", staff_pay: "", member_allowed: true, active: true });
+    setServiceForm({ id: "", name: "", duration: 1, normal_price: "", discount_type: "$", discount_value: "", staff_pay: "", member_allowed: true, active: true });
     await loadData();
   }
 
@@ -530,7 +560,8 @@ export default function App() {
       name: s.name,
       duration: s.duration,
       normal_price: s.normal_price,
-      member_price: s.member_price,
+      discount_type: s.discount_type || "$",
+      discount_value: s.discount_value || 0,
       staff_pay: s.staff_pay,
       member_allowed: s.member_allowed,
       active: s.active !== false,
@@ -859,8 +890,17 @@ export default function App() {
                 <input type="number" step="0.25" value={serviceForm.duration} onChange={(e) => setServiceForm({ ...serviceForm, duration: e.target.value })} />
                 <label>Normal Price</label>
                 <input type="number" value={serviceForm.normal_price} onChange={(e) => setServiceForm({ ...serviceForm, normal_price: e.target.value })} />
-                <label>Member Price</label>
-                <input type="number" value={serviceForm.member_price} onChange={(e) => setServiceForm({ ...serviceForm, member_price: e.target.value })} />
+                <label>Discount Type</label>
+                <select value={serviceForm.discount_type} onChange={(e) => setServiceForm({ ...serviceForm, discount_type: e.target.value })}>
+                  <option value="$">$ Discount Price</option>
+                  <option value="%">% Discount Rate</option>
+                </select>
+
+                <label>{serviceForm.discount_type === "%" ? "Discount Rate (%)" : "Discount Price ($)"}</label>
+                <input type="number" value={serviceForm.discount_value} onChange={(e) => setServiceForm({ ...serviceForm, discount_value: e.target.value })} />
+
+                <label>Member Price Auto Calculated</label>
+                <input type="number" value={money(calculateMemberPrice(serviceForm.normal_price, serviceForm.discount_type, serviceForm.discount_value))} readOnly />
                 <label>Staff Pay</label>
                 <input type="number" value={serviceForm.staff_pay} onChange={(e) => setServiceForm({ ...serviceForm, staff_pay: e.target.value })} />
                 <label>Member Price Allowed?</label>
@@ -969,7 +1009,7 @@ function ServiceTable({ services, onEdit, onToggle, onDelete }) {
     <div className="tableWrap">
       <table>
         <thead>
-          <tr><th>Service</th><th>Hours</th><th>Normal</th><th>Member</th><th>Staff</th><th>Status</th><th>Action</th></tr>
+          <tr><th>Service</th><th>Hours</th><th>Normal</th><th>Discount</th><th>Member</th><th>Staff</th><th>Status</th><th>Action</th></tr>
         </thead>
         <tbody>
           {services.map((s) => (
@@ -977,6 +1017,7 @@ function ServiceTable({ services, onEdit, onToggle, onDelete }) {
               <td>{s.name}</td>
               <td>{s.duration}</td>
               <td>${money(s.normal_price)}</td>
+              <td>{s.discount_type === "%" ? `${money(s.discount_value)}%` : `$${money(s.discount_value)}`}</td>
               <td>${money(s.member_price)}</td>
               <td>${money(s.staff_pay)}</td>
               <td>{s.active ? "Active" : "Inactive"}</td>
