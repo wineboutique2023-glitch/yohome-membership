@@ -136,6 +136,7 @@ export default function App() {
 
   const [memberSearch, setMemberSearch] = useState("");
   const [checkoutSearch, setCheckoutSearch] = useState("");
+  const [selectedProfileMember, setSelectedProfileMember] = useState(null);
 
   const [memberForm, setMemberForm] = useState({
     card_id: "",
@@ -676,6 +677,170 @@ export default function App() {
     await loadData();
   }
 
+  function getMemberHistory(member) {
+    if (!member) return [];
+
+    return checkouts
+      .filter((r) => {
+        const sameMemberId = r.member_id && member.id && r.member_id === member.id;
+        const sameName =
+          r.customer_name &&
+          member.full_name &&
+          r.customer_name.toLowerCase().trim() === member.full_name.toLowerCase().trim();
+
+        return sameMemberId || sameName;
+      })
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }
+
+  function getMemberStats(member) {
+    const history = getMemberHistory(member);
+    const totalVisits = history.length;
+    const totalSpent = history.reduce((sum, r) => sum + Number(r.final_price || 0), 0);
+    const lastVisit = history[0]?.created_at ? new Date(history[0].created_at).toLocaleString() : "No visits yet";
+
+    return {
+      history,
+      totalVisits,
+      totalSpent,
+      lastVisit,
+    };
+  }
+
+  function exportMemberHistoryPDF(member) {
+    if (!member) return alert("Please select a member first.");
+
+    const { history, totalVisits, totalSpent, lastVisit } = getMemberStats(member);
+    const expired = new Date(member.expiry_date) < new Date(todayDate());
+    const doc = new jsPDF();
+
+    doc.setFontSize(16);
+    doc.text("YOHOME Massage & Myotherapy", 14, 15);
+    doc.setFontSize(13);
+    doc.text("Client Treatment History", 14, 25);
+
+    doc.setFontSize(10);
+    doc.text(`Client: ${member.full_name || ""}`, 14, 38);
+    doc.text(`Phone: ${member.phone || ""}`, 14, 45);
+    doc.text(`Email: ${member.email || ""}`, 14, 52);
+    doc.text(`Card ID: ${member.card_id || ""}`, 14, 59);
+    doc.text(`Suburb: ${member.suburb || ""}`, 14, 66);
+    doc.text(`Membership: ${expired ? "Expired" : "Active"}`, 14, 73);
+    doc.text(`Expiry Date: ${member.expiry_date || ""}`, 14, 80);
+    doc.text(`Total Visits: ${totalVisits}`, 14, 87);
+    doc.text(`Total Paid: $${money(totalSpent)}`, 14, 94);
+    doc.text(`Last Visit: ${lastVisit}`, 14, 101);
+
+    autoTable(doc, {
+      startY: 110,
+      head: [["Date", "Service", "Therapist", "Payment", "Amount", "Note"]],
+      body: history.map((r) => [
+        r.created_at ? new Date(r.created_at).toLocaleString() : "",
+        r.service_name || "",
+        r.therapist || "",
+        r.payment_method || "",
+        `$${money(r.final_price)}`,
+        r.price_note || "",
+      ]),
+      styles: { fontSize: 8 },
+    });
+
+    const safeName = (member.full_name || "Client").replace(/[^a-z0-9]/gi, "_");
+    doc.save(`${safeName}_Treatment_History_${todayDate()}.pdf`);
+  }
+
+  function downloadClientUsageRecordsPDF() {
+    const doc = new jsPDF();
+
+    doc.setFontSize(16);
+    doc.text("YOHOME Client Usage Records", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 24);
+    doc.text(`Total Records: ${checkouts.length}`, 14, 31);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Date", "Client", "Therapist", "Service", "Payment", "Amount", "Note"]],
+      body: checkouts.map((r) => [
+        r.created_at ? new Date(r.created_at).toLocaleString() : "",
+        r.customer_name || "",
+        r.therapist || "",
+        r.service_name || "",
+        r.payment_method || "",
+        `$${money(r.final_price)}`,
+        r.price_note || "",
+      ]),
+      styles: { fontSize: 7 },
+    });
+
+    doc.save(`YOHOME_Client_Usage_Records_${todayDate()}.pdf`);
+  }
+
+  function downloadFullBackupExcel() {
+    const wb = XLSX.utils.book_new();
+
+    const membersSheet = members.map((m) => ({
+      ID: m.id,
+      "Card ID": m.card_id,
+      Name: m.full_name,
+      Phone: m.phone,
+      Email: m.email,
+      Birthday: m.birthday,
+      Suburb: m.suburb,
+      Gender: m.gender,
+      "Referral Source": m.referral_source,
+      "Sold By": m.sold_by,
+      "Membership Fee": m.membership_fee,
+      "Join Date": m.join_date,
+      "Expiry Date": m.expiry_date,
+      Status: m.status,
+      Notes: m.notes,
+      Created: m.created_at,
+    }));
+
+    const checkoutsSheet = checkouts.map((r) => ({
+      ID: r.id,
+      "Member ID": r.member_id,
+      Client: r.customer_name,
+      "Customer Type": r.customer_type,
+      Service: r.service_name,
+      Duration: r.duration,
+      "Original Price": r.original_price,
+      "Final Price": r.final_price,
+      "Staff Pay": r.staff_pay,
+      Profit: r.shop_profit,
+      Payment: r.payment_method,
+      Therapist: r.therapist,
+      Suburb: r.customer_suburb,
+      Note: r.price_note,
+      Created: r.created_at,
+    }));
+
+    const servicesSheet = services.map((s) => ({
+      ID: s.id,
+      Service: s.name,
+      Duration: s.duration,
+      "Normal Price": s.normal_price,
+      "Discount Type": s.discount_type,
+      "Discount Value": s.discount_value,
+      "Member Price": s.member_price,
+      "Staff Pay": s.staff_pay,
+      "Member Allowed": s.member_allowed,
+      Active: s.active,
+    }));
+
+    const sellersSheet = sellers.map((name) => ({ Name: name }));
+    const settingsSheet = [{ Key: "membership_fee", Value: membershipFee }];
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(membersSheet), "Members");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(checkoutsSheet), "Checkouts");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(servicesSheet), "Services");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sellersSheet), "Sellers");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(settingsSheet), "Settings");
+
+    XLSX.writeFile(wb, `YOHOME_FULL_BACKUP_${todayDate()}.xlsx`);
+  }
+
   function downloadMembersExcel() {
     const data = members.map((m) => ({
       "Card ID": m.card_id,
@@ -874,6 +1039,8 @@ export default function App() {
                         <p>{m.suburb || "No suburb"} · Sold by: {m.sold_by || "-"} · Expiry: {m.expiry_date} <span className={expired ? "badge bad" : "badge good"}>{expired ? "Expired" : "Active"}</span></p>
                       </div>
                       <div className="rowBtns">
+                        <button onClick={() => setSelectedProfileMember(m)}>View Profile</button>
+                        <button onClick={() => exportMemberHistoryPDF(m)}>Export PDF</button>
                         <button onClick={() => renewMember(m)}>Renew</button>
                         {isOwner && <button className="danger" onClick={() => deleteMember(m)}>Delete</button>}
                       </div>
@@ -881,6 +1048,16 @@ export default function App() {
                   );
                 })}
               </div>
+            </section>
+
+            <section className="panel">
+              <h3>Member Profile & Treatment History</h3>
+              <MemberProfile
+                member={selectedProfileMember}
+                history={getMemberHistory(selectedProfileMember)}
+                stats={getMemberStats(selectedProfileMember)}
+                onExportPDF={exportMemberHistoryPDF}
+              />
             </section>
           </div>
         )}
@@ -1049,6 +1226,8 @@ export default function App() {
               <button onClick={downloadMembersPDF}>Download Members PDF</button>
               <button onClick={downloadCRMExcel}>Download CRM Excel</button>
               <button onClick={downloadIncomePDF}>Download Income Report PDF</button>
+              <button onClick={downloadClientUsageRecordsPDF}>Download Client Usage PDF</button>
+              <button onClick={downloadFullBackupExcel}>Download Full Backup Excel</button>
             </div>
             <TableCheckouts rows={checkouts} isOwner={isOwner} onDelete={deleteCheckout} />
           </section>
@@ -1096,6 +1275,76 @@ function ServiceTable({ services, onEdit, onToggle, onDelete }) {
               <td>${money(s.staff_pay)}</td>
               <td>{s.active ? "Active" : "Inactive"}</td>
               <td className="rowBtns"><button onClick={() => onEdit(s)}>Edit</button><button onClick={() => onToggle(s)}>{s.active ? "Disable" : "Enable"}</button><button className="danger" onClick={() => onDelete(s)}>Delete</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+
+function MemberProfile({ member, history, stats, onExportPDF }) {
+  if (!member) {
+    return <p className="empty">Select a member and click View Profile to see treatment history.</p>;
+  }
+
+  const expired = new Date(member.expiry_date) < new Date(todayDate());
+
+  return (
+    <div>
+      <div className="notice">
+        <strong>{member.full_name}</strong>
+        <p>{member.phone || "No phone"} · {member.email || "No email"} · {member.card_id}</p>
+        <p>{member.suburb || "No suburb"} · Sold by: {member.sold_by || "-"}</p>
+        <p>
+          Membership: <span className={expired ? "badge bad" : "badge good"}>{expired ? "Expired" : "Active"}</span>
+          {" "}Expires: {member.expiry_date || ""}
+        </p>
+      </div>
+
+      <div className="cards">
+        <Card title="Total Visits" value={stats.totalVisits} />
+        <Card title="Total Spent" value={`$${money(stats.totalSpent)}`} />
+        <Card title="Last Visit" value={stats.lastVisit} />
+      </div>
+
+      <div className="exportBtns">
+        <button onClick={() => onExportPDF?.(member)}>Export Client History PDF</button>
+      </div>
+
+      <h3>Treatment History</h3>
+      <TreatmentHistoryTable rows={history} />
+    </div>
+  );
+}
+
+function TreatmentHistoryTable({ rows }) {
+  if (!rows?.length) return <p className="empty">No treatment history yet.</p>;
+
+  return (
+    <div className="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Service</th>
+            <th>Therapist</th>
+            <th>Payment</th>
+            <th>Amount</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>{r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
+              <td>{r.service_name || ""}</td>
+              <td>{r.therapist || ""}</td>
+              <td>{r.payment_method || ""}</td>
+              <td>${money(r.final_price)}</td>
+              <td>{r.price_note || ""}</td>
             </tr>
           ))}
         </tbody>
