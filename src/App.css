@@ -292,3 +292,205 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== YOHOME CRM profile layout upgrade ===== */
+/* Paste this at the bottom of src/App.css */
+
+.profilePage {
+  width: 100%;
+}
+
+.profileHero {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  padding: 28px 32px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #fff8df, #fffdf7);
+  margin-bottom: 24px;
+}
+
+.profileAvatar {
+  width: 110px;
+  height: 110px;
+  border-radius: 999px;
+  background: #dff3e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 58px;
+  flex-shrink: 0;
+}
+
+.profileDetails h2 {
+  margin: 0 0 14px;
+  color: #20362d;
+  font-size: 28px;
+}
+
+.profileInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px 26px;
+  font-size: 16px;
+  color: #1f2933;
+}
+
+.profileMembershipLine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  font-size: 16px;
+}
+
+.profileStatGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 22px;
+  margin-bottom: 18px;
+}
+
+.profileStatCard {
+  min-height: 130px;
+  padding: 24px 28px;
+  border-radius: 22px;
+  background: white;
+  box-shadow: 0 12px 28px #00000010;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.profileStatIcon {
+  width: 76px;
+  height: 76px;
+  border-radius: 999px;
+  background: #e7f7ed;
+  color: #087443;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.profileStatCard span {
+  display: block;
+  color: #667085;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.profileStatCard strong {
+  display: block;
+  color: #20362d;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.profileExportBtns {
+  margin: 12px 0 22px;
+}
+
+.profileExportBtns button {
+  min-width: 260px;
+}
+
+.redeemInfoBox {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 28px;
+  border-radius: 20px;
+  background: #eef7ff;
+  margin: 18px 0 24px;
+  border: 1px solid #dbeafe;
+}
+
+.redeemInfoBox strong {
+  color: #0f3d75;
+  font-size: 18px;
+}
+
+.redeemInfoBox p {
+  margin: 8px 0;
+}
+
+.redeemInfoBox ul {
+  margin: 8px 0 0 18px;
+  padding: 0;
+}
+
+.redeemValueCard {
+  min-width: 230px;
+  border: 2px dashed #60a5fa;
+  border-radius: 18px;
+  padding: 18px;
+  text-align: center;
+  background: white;
+}
+
+.redeemValueCard span,
+.redeemValueCard small {
+  display: block;
+  color: #0f3d75;
+}
+
+.redeemValueCard strong {
+  display: block;
+  font-size: 36px;
+  color: #0f4c9a;
+  margin: 8px 0;
+}
+
+.historyPanel {
+  background: white;
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 12px 28px #00000010;
+}
+
+.historyPanel h3 {
+  margin: 0 0 16px;
+  color: #20362d;
+  font-size: 24px;
+}
+
+.paymentPill {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: #e7f7ed;
+  color: #087443;
+  font-weight: 700;
+}
+
+.grid-two:has(.profilePage) {
+  grid-template-columns: 430px minmax(760px, 1fr);
+  align-items: start;
+}
+
+.grid-two:has(.profilePage) .panel:has(.profilePage) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .profileInfoGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .profileStatGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .redeemInfoBox {
+    display: block;
+  }
+
+  .redeemValueCard {
+    margin-top: 18px;
+  }
+}
+
