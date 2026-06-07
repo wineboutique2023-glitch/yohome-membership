@@ -1,201 +1,304 @@
-
-/* ===== YOHOME CRM profile layout upgrade ===== */
-/* Paste this at the bottom of src/App.css */
-
-.profilePage {
-  width: 100%;
+* {
+  box-sizing: border-box;
 }
 
-.profileHero {
-  display: flex;
-  gap: 28px;
-  align-items: center;
-  padding: 28px 32px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #fff8df, #fffdf7);
-  margin-bottom: 24px;
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f7fb;
+  color: #102033;
 }
 
-.profileAvatar {
-  width: 110px;
-  height: 110px;
-  border-radius: 999px;
-  background: #dff3e6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 58px;
-  flex-shrink: 0;
+button,
+input,
+textarea {
+  font: inherit;
 }
 
-.profileDetails h2 {
-  margin: 0 0 14px;
-  color: #20362d;
-  font-size: 28px;
-}
-
-.profileInfoGrid {
+.app {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
-  gap: 12px 26px;
-  font-size: 16px;
-  color: #1f2933;
+  grid-template-columns: 320px 1fr;
+  min-height: 100vh;
 }
 
-.profileMembershipLine {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 18px;
-  font-size: 16px;
+.sidebar {
+  background: #ffffff;
+  border-right: 1px solid #d8e2ef;
+  padding: 22px;
 }
 
-.profileStatGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
-  gap: 22px;
+.brand {
+  background: #1f6fac;
+  color: white;
+  padding: 22px;
+  border-radius: 20px;
   margin-bottom: 18px;
 }
 
-.profileStatCard {
-  min-height: 130px;
-  padding: 24px 28px;
-  border-radius: 22px;
-  background: white;
-  box-shadow: 0 12px 28px #00000010;
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.profileStatIcon {
-  width: 76px;
-  height: 76px;
-  border-radius: 999px;
-  background: #e7f7ed;
-  color: #087443;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.brand h1 {
+  margin: 0;
   font-size: 34px;
-  font-weight: 800;
-  flex-shrink: 0;
 }
 
-.profileStatCard span {
+.brand p {
+  margin: 8px 0 0;
+  font-size: 20px;
+}
+
+.primary {
+  background: #1f6fac;
+  color: white;
+  border: 0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.full {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.search {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #cfd9e6;
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+
+.clientList {
+  display: grid;
+  gap: 12px;
+}
+
+.client {
+  text-align: left;
+  border: 1px solid #d8e2ef;
+  background: white;
+  border-radius: 16px;
+  padding: 18px;
+  cursor: pointer;
+}
+
+.client.active {
+  border-color: #1f6fac;
+  background: #eef6ff;
+}
+
+.client strong,
+.client span {
   display: block;
-  color: #667085;
-  font-size: 16px;
+}
+
+.client span {
+  color: #5f7085;
+  margin-top: 6px;
+}
+
+.main {
+  padding: 28px;
+}
+
+.topCard,
+.card {
+  background: white;
+  border: 1px solid #d8e2ef;
+  border-radius: 22px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.topCard h2 {
+  margin: 0;
+  font-size: 34px;
+}
+
+.topCard p {
+  margin: 8px 0 0;
+  color: #5f7085;
+  font-size: 20px;
+}
+
+.tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.tabs button {
+  border: 1px solid #d8e2ef;
+  background: white;
+  border-radius: 999px;
+  padding: 12px 20px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.tabs button.on {
+  background: #1f6fac;
+  color: white;
+  border-color: #1f6fac;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.field span {
+  display: block;
+  font-weight: bold;
+  color: #4c5f75;
   margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 13px;
 }
 
-.profileStatCard strong {
-  display: block;
-  color: #20362d;
-  font-size: 30px;
-  line-height: 1.1;
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid #cfd9e6;
+  border-radius: 14px;
+  padding: 13px 14px;
+  background: white;
 }
 
-.profileExportBtns {
-  margin: 12px 0 22px;
+.field textarea {
+  min-height: 120px;
+  resize: vertical;
 }
 
-.profileExportBtns button {
-  min-width: 260px;
+.span2 {
+  grid-column: span 2;
 }
 
-.redeemInfoBox {
+.historyGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.record {
+  border: 1px solid #d8e2ef;
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 14px;
+  background: #fbfdff;
+}
+
+.record button {
+  margin-top: 10px;
+  border: 0;
+  background: #102033;
+  color: white;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.printOverlay {
+  position: fixed;
+  inset: 0;
+  background: #eef2f6;
+  z-index: 999;
+  overflow: auto;
+  padding: 24px;
+}
+
+.printActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.printActions button {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #cfd9e6;
+  background: white;
+  cursor: pointer;
+}
+
+.printPage {
+  background: white;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 34px;
+  border-radius: 12px;
+}
+
+.printHeader {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
-  padding: 22px 28px;
-  border-radius: 20px;
-  background: #eef7ff;
-  margin: 18px 0 24px;
-  border: 1px solid #dbeafe;
+  gap: 20px;
+  border-bottom: 2px solid #102033;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
 }
 
-.redeemInfoBox strong {
-  color: #0f3d75;
-  font-size: 18px;
+.printHeader h1 {
+  margin: 0;
 }
 
-.redeemInfoBox p {
-  margin: 8px 0;
+.printInfo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 20px;
+  margin-bottom: 20px;
 }
 
-.redeemInfoBox ul {
-  margin: 8px 0 0 18px;
-  padding: 0;
+.printBlock {
+  border-top: 1px solid #ddd;
+  padding-top: 12px;
+  margin-top: 12px;
 }
 
-.redeemValueCard {
-  min-width: 230px;
-  border: 2px dashed #60a5fa;
-  border-radius: 18px;
-  padding: 18px;
-  text-align: center;
-  background: white;
+.printBlock h3 {
+  margin: 0 0 8px;
 }
 
-.redeemValueCard span,
-.redeemValueCard small {
-  display: block;
-  color: #0f3d75;
-}
-
-.redeemValueCard strong {
-  display: block;
-  font-size: 36px;
-  color: #0f4c9a;
-  margin: 8px 0;
-}
-
-.historyPanel {
-  background: white;
-  border-radius: 22px;
-  padding: 22px;
-  box-shadow: 0 12px 28px #00000010;
-}
-
-.historyPanel h3 {
-  margin: 0 0 16px;
-  color: #20362d;
-  font-size: 24px;
-}
-
-.paymentPill {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 10px;
-  background: #e7f7ed;
-  color: #087443;
-  font-weight: 700;
-}
-
-.grid-two:has(.profilePage) {
-  grid-template-columns: 430px minmax(760px, 1fr);
-  align-items: start;
-}
-
-.grid-two:has(.profilePage) .panel:has(.profilePage) {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 1100px) {
-  .profileInfoGrid {
+@media (max-width: 900px) {
+  .app {
     grid-template-columns: 1fr;
   }
 
-  .profileStatGrid {
+  .grid,
+  .historyGrid,
+  .printInfo {
     grid-template-columns: 1fr;
   }
 
-  .redeemInfoBox {
-    display: block;
+  .span2 {
+    grid-column: span 1;
+  }
+}
+
+@media print {
+  .noPrint,
+  .sidebar,
+  .main {
+    display: none !important;
   }
 
-  .redeemValueCard {
-    margin-top: 18px;
+  body {
+    background: white;
+  }
+
+  .printOverlay {
+    position: static;
+    padding: 0;
+    background: white;
+  }
+
+  .printPage {
+    box-shadow: none;
+    border-radius: 0;
+    max-width: none;
   }
 }
