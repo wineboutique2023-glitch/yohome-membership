@@ -467,13 +467,27 @@ th {
   font-weight: 700;
 }
 
-.grid-two:has(.profilePage) {
-  grid-template-columns: 430px minmax(760px, 1fr);
-  align-items: start;
+.profilePanel {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
-.grid-two:has(.profilePage) .panel:has(.profilePage) {
-  grid-column: 1 / -1;
+.profilePanel .profilePage {
+  width: 100%;
+}
+
+.profilePanel .tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.profilePanel table {
+  min-width: 900px;
+}
+
+.grid-two {
+  grid-template-columns: 420px minmax(700px, 1fr);
+  align-items: start;
 }
 
 @media (max-width: 1100px) {
