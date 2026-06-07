@@ -1173,8 +1173,8 @@ export default function App() {
               </div>
             </section>
 
-            <section className="panel">
-              <h3>Member Profile & Treatment History</h3>
+           <section className="panel profilePanel">
+  <h3>Member Profile & Treatment History</h3>
               <MemberProfile
                 member={selectedProfileMember}
                 history={getMemberHistory(selectedProfileMember)}
