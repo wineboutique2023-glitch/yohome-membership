@@ -119,6 +119,33 @@ function calculateMemberPrice(normalPrice, discountType, discountValue) {
   return Math.max(0, base - discount);
 }
 
+function canRedeemFirstHour(service) {
+  if (!service) return false;
+  return Number(service.duration || 0) >= 1;
+}
+
+function redeemFirstHourPrice(service, currentPrice) {
+  const redeemValue = 100;
+  return Math.max(0, Number(currentPrice || service?.normal_price || 0) - redeemValue);
+}
+
+function redeemFirstHourNote(service) {
+  if (!service) return "";
+  const price = Number(service.normal_price || 0);
+  const duration = Number(service.duration || 0);
+  const extra = Math.max(0, price - 100);
+
+  if (duration < 1) {
+    return "Redeem First Hour cannot be used for services under 60 minutes.";
+  }
+
+  if (extra === 0) {
+    return "Redeem First Hour applied: $100 value fully redeemed.";
+  }
+
+  return `Redeem First Hour applied: $100 value redeemed. Customer pays extra $${money(extra)}.`;
+}
+
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [viewMode, setViewMode] = useState("staff");
@@ -335,9 +362,14 @@ export default function App() {
     }
 
     if (checkoutForm.payment_method === "Redeem First Hour Massage") {
-      finalPrice = 0;
-      note = "Free first hour membership benefit applied.";
+      if (canRedeemFirstHour(selectedService)) {
+        finalPrice = redeemFirstHourPrice(selectedService, selectedService.normal_price);
+        note = redeemFirstHourNote(selectedService);
+      } else {
+        note = redeemFirstHourNote(selectedService);
+      }
     }
+
     const staffPay = Number(selectedService.staff_pay || 0);
     const shopProfit = finalPrice - staffPay;
 
@@ -1202,7 +1234,16 @@ export default function App() {
                     <strong>{pricePreview.note}</strong>
                   </div>
                 )}
-                <button className="primary">Confirm Checkout</button>
+                <button
+                  className="primary"
+                  disabled={
+                    checkoutForm.payment_method === "Redeem First Hour Massage" &&
+                    selectedService &&
+                    !canRedeemFirstHour(selectedService)
+                  }
+                >
+                  Confirm Checkout
+                </button>
               </form>
             </section>
             <section className="panel">
@@ -1385,29 +1426,80 @@ function MemberProfile({ member, history, stats, onExportPDF }) {
   const expired = new Date(member.expiry_date) < new Date(todayDate());
 
   return (
-    <div>
-      <div className="notice">
-        <strong>{member.full_name}</strong>
-        <p>{member.phone || "No phone"} · {member.email || "No email"} · {member.card_id}</p>
-        <p>{member.suburb || "No suburb"} · Sold by: {member.sold_by || "-"}</p>
-        <p>
-          Membership: <span className={expired ? "badge bad" : "badge good"}>{expired ? "Expired" : "Active"}</span>
-          {" "}Expires: {member.expiry_date || ""}
-        </p>
+    <div className="profilePage">
+      <div className="profileHero">
+        <div className="profileAvatar">👤</div>
+
+        <div className="profileDetails">
+          <h2>{member.full_name}</h2>
+
+          <div className="profileInfoGrid">
+            <span>☎ {member.phone || "No phone"}</span>
+            <span>✉ {member.email || "No email"}</span>
+            <span>▣ {member.card_id}</span>
+            <span>⌖ {member.suburb || "No suburb"}</span>
+            <span>Sold by: {member.sold_by || "-"}</span>
+          </div>
+
+          <div className="profileMembershipLine">
+            <span>Membership:</span>
+            <span className={expired ? "badge bad" : "badge good"}>{expired ? "Expired" : "Active"}</span>
+            <span>Expires: {member.expiry_date || ""}</span>
+          </div>
+        </div>
       </div>
 
-      <div className="cards">
-        <Card title="Total Visits" value={stats.totalVisits} />
-        <Card title="Total Spent" value={`$${money(stats.totalSpent)}`} />
-        <Card title="Last Visit" value={stats.lastVisit} />
+      <div className="profileStatGrid">
+        <div className="profileStatCard">
+          <div className="profileStatIcon">👥</div>
+          <div>
+            <span>Total Visits</span>
+            <strong>{stats.totalVisits}</strong>
+          </div>
+        </div>
+
+        <div className="profileStatCard">
+          <div className="profileStatIcon">$</div>
+          <div>
+            <span>Total Spent</span>
+            <strong>${money(stats.totalSpent)}</strong>
+          </div>
+        </div>
+
+        <div className="profileStatCard">
+          <div className="profileStatIcon">📅</div>
+          <div>
+            <span>Last Visit</span>
+            <strong>{stats.lastVisit}</strong>
+          </div>
+        </div>
       </div>
 
-      <div className="exportBtns">
+      <div className="exportBtns profileExportBtns">
         <button onClick={() => onExportPDF?.(member)}>Export Client History PDF</button>
       </div>
 
-      <h3>Treatment History</h3>
-      <TreatmentHistoryTable rows={history} />
+      <div className="redeemInfoBox">
+        <div>
+          <strong>Redeem First Hour Massage</strong>
+          <p>$100 redeemable value for one 60-minute session. Services under 60 minutes cannot use this benefit.</p>
+          <ul>
+            <li>60 min $100 service → $0</li>
+            <li>60 min $110 service → customer pays $10</li>
+            <li>90 min $150 service → customer pays $50</li>
+          </ul>
+        </div>
+        <div className="redeemValueCard">
+          <span>Redeemable Value</span>
+          <strong>$100</strong>
+          <small>One-time use only</small>
+        </div>
+      </div>
+
+      <div className="historyPanel">
+        <h3>Treatment History</h3>
+        <TreatmentHistoryTable rows={history} />
+      </div>
     </div>
   );
 }
@@ -1434,7 +1526,7 @@ function TreatmentHistoryTable({ rows }) {
               <td>{r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
               <td>{r.service_name || ""}</td>
               <td>{r.therapist || ""}</td>
-              <td>{r.payment_method || ""}</td>
+              <td><span className="paymentPill">{r.payment_method || ""}</span></td>
               <td>${money(r.final_price)}</td>
               <td>{r.price_note || ""}</td>
             </tr>
