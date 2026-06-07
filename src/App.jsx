@@ -335,9 +335,9 @@ export default function App() {
     }
 
     if (checkoutForm.payment_method === "Redeem First Hour Massage") {
-  finalPrice = 0;
-  note = "Free first hour membership benefit applied.";
-}
+      finalPrice = 0;
+      note = "Free first hour membership benefit applied.";
+    }
     const staffPay = Number(selectedService.staff_pay || 0);
     const shopProfit = finalPrice - staffPay;
 
@@ -349,7 +349,7 @@ export default function App() {
       shopProfit,
       note,
     };
-  }, [selectedService, selectedMember]);
+  }, [selectedService, selectedMember, checkoutForm.payment_method]);
 
   const existingMemberWarning = useMemo(() => {
     const phone = memberForm.phone.trim();
@@ -1107,7 +1107,6 @@ export default function App() {
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
-                  <option>Redeem First Hour Massage</option>
                 </select>
                 <label>Notes</label>
                 <textarea value={memberForm.notes} onChange={(e) => setMemberForm({ ...memberForm, notes: e.target.value })} />
@@ -1186,6 +1185,7 @@ export default function App() {
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
+                  <option>Redeem First Hour Massage</option>
                 </select>
                 {isOwner && (
                   <>
