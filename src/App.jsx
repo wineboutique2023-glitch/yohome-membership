@@ -334,6 +334,10 @@ export default function App() {
       note = "This service is not eligible for member price.";
     }
 
+    if (checkoutForm.payment_method === "Redeem First Hour Massage") {
+  finalPrice = 0;
+  note = "Free first hour membership benefit applied.";
+}
     const staffPay = Number(selectedService.staff_pay || 0);
     const shopProfit = finalPrice - staffPay;
 
@@ -1103,6 +1107,7 @@ export default function App() {
                   <option>Cash</option>
                   <option>Card</option>
                   <option>Bank Transfer</option>
+                  <option>Redeem First Hour Massage</option>
                 </select>
                 <label>Notes</label>
                 <textarea value={memberForm.notes} onChange={(e) => setMemberForm({ ...memberForm, notes: e.target.value })} />
