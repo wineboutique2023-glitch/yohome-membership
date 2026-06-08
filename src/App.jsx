@@ -1242,7 +1242,7 @@ created_at: checkoutForm.checkout_datetime
 
                 <label>Service Date / Time</label>
 <input
-  type="datetime-local"
+  type="date"
   value={checkoutForm.checkout_datetime || ""}
   onChange={(e) =>
     setCheckoutForm({
