@@ -549,7 +549,7 @@ export default function App() {
       membership_fee: Number(membershipFee || 100),
       status: "active",
       created_at: checkoutForm.checkout_datetime
-  ? new Date(checkoutForm.checkout_datetime).toISOString()
+  ? checkoutForm.checkout_datetime + "T12:00:00"
   : new Date().toISOString(),
       deleted: false,
 created_at: checkoutForm.checkout_datetime
