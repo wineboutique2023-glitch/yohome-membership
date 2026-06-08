@@ -682,7 +682,14 @@ export default function App() {
     const { error } = await supabase.from("checkouts").insert(payload);
     if (error) return alert(error.message);
 
-    setCheckoutForm({ member_id: "guest", service_id: "", therapist: "", payment_method: "Cash", price_note: "" });
+    setCheckoutForm({
+  member_id: "guest",
+  service_id: "",
+  therapist: "",
+  payment_method: "Cash",
+  price_note: "",
+  checkout_datetime: new Date().toISOString().slice(0, 16),
+});
     setCheckoutSearch("");
     await loadData();
     alert("Checkout saved.");
