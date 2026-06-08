@@ -553,7 +553,7 @@ export default function App() {
   : new Date().toISOString(),
       deleted: false,
 created_at: checkoutForm.checkout_datetime
-  ? new Date(checkoutForm.checkout_datetime).toISOString()
+  ? checkoutForm.checkout_datetime + "T12:00:00"
   : new Date().toISOString(),
       receipt_sent: false,
     };
