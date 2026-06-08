@@ -546,6 +546,9 @@ export default function App() {
       join_date: todayDate(),
       membership_fee: Number(membershipFee || 100),
       status: "active",
+      created_at: checkoutForm.checkout_datetime
+  ? new Date(checkoutForm.checkout_datetime).toISOString()
+  : new Date().toISOString(),
       deleted: false,
       receipt_sent: false,
     };
