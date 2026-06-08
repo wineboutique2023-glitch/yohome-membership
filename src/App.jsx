@@ -183,10 +183,12 @@ export default function App() {
   });
 
   const [checkoutForm, setCheckoutForm] = useState({
-  member_id: "guest",
-  service_id: "",
+  customer: "",
+  service: "",
   therapist: "",
   payment_method: "Cash",
+  checkout_datetime: new Date().toISOString().slice(0,16),
+});
   price_note: "",
   checkout_datetime: new Date().toISOString().slice(0, 16),
 });
