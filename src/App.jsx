@@ -1644,12 +1644,17 @@ function DeletedCheckoutsTable({ rows, onRestore, onPermanentDelete }) {
 function TableCheckouts({ rows, isOwner, onDelete }) {
   if (!rows?.length) return <p className="empty">No records yet.</p>;
   return (
-    <div className="tableWrap">
-      <table>
+    <div className="tableWrap checkoutTableWrap">
+      <table className="checkoutTable">
         <thead>
           <tr>
-            <th>Date</th><th>Name</th><th>Therapist</th><th>Service</th><th>Price</th>
-            {isOwner && <><th>Staff</th><th>Profit</th><th>Payment</th><th>Note</th><th>Action</th></>}
+            <th>Date</th>
+            <th>Name</th>
+            <th>Therapist</th>
+            <th>Service</th>
+            <th>Price</th>
+            {isOwner && <th>Action</th>}
+            {isOwner && <><th>Staff</th><th>Profit</th><th>Payment</th><th>Note</th></>}
           </tr>
         </thead>
         <tbody>
@@ -1660,7 +1665,14 @@ function TableCheckouts({ rows, isOwner, onDelete }) {
               <td>{r.therapist || ""}</td>
               <td>{r.service_name}</td>
               <td>${money(r.final_price)}</td>
-              {isOwner && <><td>${money(r.staff_pay)}</td><td>${money(r.shop_profit)}</td><td>{r.payment_method || ""}</td><td>{r.price_note || ""}</td><td><button className="danger" onClick={() => onDelete?.(r)}>Delete</button></td></>}
+              {isOwner && (
+                <td>
+                  <button className="tableDeleteBtn" onClick={() => onDelete?.(r)}>
+                    Delete
+                  </button>
+                </td>
+              )}
+              {isOwner && <><td>${money(r.staff_pay)}</td><td>${money(r.shop_profit)}</td><td>{r.payment_method || ""}</td><td>{r.price_note || ""}</td></>}
             </tr>
           ))}
         </tbody>
