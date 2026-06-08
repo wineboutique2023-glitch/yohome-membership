@@ -183,12 +183,13 @@ export default function App() {
   });
 
   const [checkoutForm, setCheckoutForm] = useState({
-    member_id: "guest",
-    service_id: "",
-    therapist: "",
-    payment_method: "Cash",
-    price_note: "",
-  });
+  member_id: "guest",
+  service_id: "",
+  therapist: "",
+  payment_method: "Cash",
+  price_note: "",
+  checkout_datetime: new Date().toISOString().slice(0, 16),
+});
 
   const [serviceForm, setServiceForm] = useState({
     id: "",
