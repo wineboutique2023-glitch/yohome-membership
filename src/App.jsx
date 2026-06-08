@@ -1240,18 +1240,6 @@ created_at: checkoutForm.checkout_datetime
   {sellers.map((x) => <option key={x}>{x}</option>)}
 </select>
 
-<label>Service Date / Time</label>
-<input
-  type="datetime-local"
-  value={checkoutForm.checkout_datetime}
-  onChange={(e) =>
-    setCheckoutForm({
-      ...checkoutForm,
-      checkout_datetime: e.target.value,
-    })
-  }
-/>
-
                 <label>Service Date / Time</label>
 <input
   type="datetime-local"
