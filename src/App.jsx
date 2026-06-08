@@ -552,6 +552,9 @@ export default function App() {
   ? new Date(checkoutForm.checkout_datetime).toISOString()
   : new Date().toISOString(),
       deleted: false,
+created_at: checkoutForm.checkout_datetime
+  ? new Date(checkoutForm.checkout_datetime).toISOString()
+  : new Date().toISOString(),
       receipt_sent: false,
     };
 
