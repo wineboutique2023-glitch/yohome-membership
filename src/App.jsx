@@ -190,7 +190,7 @@ export default function App() {
   checkout_datetime: new Date().toISOString().slice(0,16),
 });
   price_note: "",
-  checkout_datetime: new Date().toISOString().slice(0, 16),
+ checkout_datetime: new Date().toISOString().slice(0, 10),
 });
 
   const [serviceForm, setServiceForm] = useState({
@@ -693,7 +693,7 @@ created_at: checkoutForm.checkout_datetime
   therapist: "",
   payment_method: "Cash",
   price_note: "",
-  checkout_datetime: new Date().toISOString().slice(0, 16),
+  checkout_datetime: new Date().toISOString().slice(0, 10),
 });
     setCheckoutSearch("");
     await loadData();
