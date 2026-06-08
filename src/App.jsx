@@ -1123,6 +1123,17 @@ export default function App() {
                   <option>Male</option>
                   <option>Other</option>
                 </select>
+                <label>Service Date / Time</label>
+<input
+  type="datetime-local"
+  value={checkoutForm.checkout_datetime}
+  onChange={(e) =>
+    setCheckoutForm({
+      ...checkoutForm,
+      checkout_datetime: e.target.value,
+    })
+  }
+/>
                 <label>Referral Source</label>
                 <select value={memberForm.referral_source} onChange={(e) => setMemberForm({ ...memberForm, referral_source: e.target.value })}>
                   <option value="">Select</option>
