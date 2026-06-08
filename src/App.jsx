@@ -1247,7 +1247,18 @@ export default function App() {
   }
 />
 
-<label>Payment</label>
+                <label>Service Date / Time</label>
+<input
+  type="datetime-local"
+  value={checkoutForm.checkout_datetime || ""}
+  onChange={(e) =>
+    setCheckoutForm({
+      ...checkoutForm,
+      checkout_datetime: e.target.value,
+    })
+  }
+/>
+                <label>Payment</label>
                 <select value={checkoutForm.payment_method} onChange={(e) => setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })}>
                   <option>Cash</option>
                   <option>Card</option>
