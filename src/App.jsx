@@ -119,21 +119,24 @@ function calculateMemberPrice(normalPrice, discountType, discountValue) {
   return Math.max(0, base - discount);
 }
 
+function todayDateInput() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function canRedeemFirstHour(service) {
   if (!service) return false;
   return Number(service.duration || 0) >= 1;
 }
 
-function redeemFirstHourPrice(service, currentPrice) {
-  const redeemValue = 100;
-  return Math.max(0, Number(currentPrice || service?.normal_price || 0) - redeemValue);
+function redeemFirstHourPrice(service) {
+  return Math.max(0, Number(service?.normal_price || 0) - 100);
 }
 
 function redeemFirstHourNote(service) {
   if (!service) return "";
-  const price = Number(service.normal_price || 0);
+  const normalPrice = Number(service.normal_price || 0);
   const duration = Number(service.duration || 0);
-  const extra = Math.max(0, price - 100);
+  const extra = Math.max(0, normalPrice - 100);
 
   if (duration < 1) {
     return "Redeem First Hour cannot be used for services under 60 minutes.";
@@ -183,15 +186,13 @@ export default function App() {
   });
 
   const [checkoutForm, setCheckoutForm] = useState({
-  customer: "",
-  service: "",
-  therapist: "",
-  payment_method: "Cash",
-  checkout_datetime: new Date().toISOString().slice(0,16),
-});
-  price_note: "",
- checkout_datetime: new Date().toISOString().slice(0, 10),
-});
+    member_id: "guest",
+    service_id: "",
+    therapist: "",
+    payment_method: "Cash",
+    price_note: "",
+    checkout_date: todayDateInput(),
+  });
 
   const [serviceForm, setServiceForm] = useState({
     id: "",
@@ -366,13 +367,12 @@ export default function App() {
 
     if (checkoutForm.payment_method === "Redeem First Hour Massage") {
       if (canRedeemFirstHour(selectedService)) {
-        finalPrice = redeemFirstHourPrice(selectedService, selectedService.normal_price);
+        finalPrice = redeemFirstHourPrice(selectedService);
         note = redeemFirstHourNote(selectedService);
       } else {
         note = redeemFirstHourNote(selectedService);
       }
     }
-
     const staffPay = Number(selectedService.staff_pay || 0);
     const shopProfit = finalPrice - staffPay;
 
@@ -548,13 +548,7 @@ export default function App() {
       join_date: todayDate(),
       membership_fee: Number(membershipFee || 100),
       status: "active",
-      created_at: checkoutForm.checkout_datetime
-  ? checkoutForm.checkout_datetime + "T12:00:00"
-  : new Date().toISOString(),
       deleted: false,
-created_at: checkoutForm.checkout_datetime
-  ? checkoutForm.checkout_datetime + "T12:00:00"
-  : new Date().toISOString(),
       receipt_sent: false,
     };
 
@@ -682,19 +676,22 @@ created_at: checkoutForm.checkout_datetime
       price_note: checkoutForm.price_note || pricePreview.note,
       service_price: pricePreview.finalPrice,
       deleted: false,
+      created_at: checkoutForm.checkout_date
+        ? checkoutForm.checkout_date + "T12:00:00"
+        : new Date().toISOString(),
     };
 
     const { error } = await supabase.from("checkouts").insert(payload);
     if (error) return alert(error.message);
 
     setCheckoutForm({
-  member_id: "guest",
-  service_id: "",
-  therapist: "",
-  payment_method: "Cash",
-  price_note: "",
-  checkout_datetime: new Date().toISOString().slice(0, 10),
-});
+      member_id: "guest",
+      service_id: "",
+      therapist: "",
+      payment_method: "Cash",
+      price_note: "",
+      checkout_date: todayDateInput(),
+    });
     setCheckoutSearch("");
     await loadData();
     alert("Checkout saved.");
@@ -1138,17 +1135,6 @@ created_at: checkoutForm.checkout_datetime
                   <option>Male</option>
                   <option>Other</option>
                 </select>
-                <label>Service Date / Time</label>
-<input
-  type="date"
-  value={checkoutForm.checkout_datetime}
-  onChange={(e) =>
-    setCheckoutForm({
-      ...checkoutForm,
-      checkout_datetime: e.target.value,
-    })
-  }
-/>
                 <label>Referral Source</label>
                 <select value={memberForm.referral_source} onChange={(e) => setMemberForm({ ...memberForm, referral_source: e.target.value })}>
                   <option value="">Select</option>
@@ -1200,8 +1186,8 @@ created_at: checkoutForm.checkout_datetime
               </div>
             </section>
 
-           <section className="panel profilePanel">
-  <h3>Member Profile & Treatment History</h3>
+            <section className="panel profilePanel">
+              <h3>Member Profile & Treatment History</h3>
               <MemberProfile
                 member={selectedProfileMember}
                 history={getMemberHistory(selectedProfileMember)}
@@ -1235,22 +1221,22 @@ created_at: checkoutForm.checkout_datetime
                   {activeServices.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <label>Therapist</label>
-<select value={checkoutForm.therapist} onChange={(e) => setCheckoutForm({ ...checkoutForm, therapist: e.target.value })}>
-  <option value="">Select</option>
-  {sellers.map((x) => <option key={x}>{x}</option>)}
-</select>
+                <select value={checkoutForm.therapist} onChange={(e) => setCheckoutForm({ ...checkoutForm, therapist: e.target.value })}>
+                  <option value="">Select</option>
+                  {sellers.map((x) => <option key={x}>{x}</option>)}
+                </select>
 
-                <label>Service Date / Time</label>
-<input
-  type="date"
-  value={checkoutForm.checkout_datetime || ""}
-  onChange={(e) =>
-    setCheckoutForm({
-      ...checkoutForm,
-      checkout_datetime: e.target.value,
-    })
-  }
-/>
+                <label>Service Date</label>
+                <input
+                  type="date"
+                  value={checkoutForm.checkout_date || todayDateInput()}
+                  onChange={(e) =>
+                    setCheckoutForm({
+                      ...checkoutForm,
+                      checkout_date: e.target.value,
+                    })
+                  }
+                />
                 <label>Payment</label>
                 <select value={checkoutForm.payment_method} onChange={(e) => setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })}>
                   <option>Cash</option>
@@ -1271,6 +1257,9 @@ created_at: checkoutForm.checkout_datetime
                     <p>Final Price: ${money(pricePreview.finalPrice)}</p>
                     {isOwner && <><p>Staff Pay: ${money(pricePreview.staffPay)}</p><p>Profit: ${money(pricePreview.shopProfit)}</p></>}
                     <strong>{pricePreview.note}</strong>
+                    {checkoutForm.payment_method === "Redeem First Hour Massage" && selectedService && !canRedeemFirstHour(selectedService) && (
+                      <div className="warningBox">Redeem First Hour can only be used for services of 60 minutes or longer.</div>
+                    )}
                   </div>
                 )}
                 <button
@@ -1521,7 +1510,7 @@ function MemberProfile({ member, history, stats, onExportPDF }) {
       <div className="redeemInfoBox">
         <div>
           <strong>Redeem First Hour Massage</strong>
-          <p>$100 redeemable value for one 60-minute session. Services under 60 minutes cannot use this benefit.</p>
+          <p>$100 redeemable value for one session of 60 minutes or longer. Services under 60 minutes cannot use this benefit.</p>
           <ul>
             <li>60 min $100 service → $0</li>
             <li>60 min $110 service → customer pays $10</li>
