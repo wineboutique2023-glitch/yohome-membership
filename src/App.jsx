@@ -168,6 +168,7 @@ export default function App() {
   const [memberSearch, setMemberSearch] = useState("");
   const [checkoutSearch, setCheckoutSearch] = useState("");
   const [selectedProfileMember, setSelectedProfileMember] = useState(null);
+  const [editingMember, setEditingMember] = useState(null);
 
   const [memberForm, setMemberForm] = useState({
     card_id: "",
@@ -624,6 +625,41 @@ export default function App() {
 
     if (error) return alert(error.message);
     await loadData();
+  }
+
+  async function updateMember(e) {
+    e.preventDefault();
+    if (!isOwner) return alert("Only owner can edit members.");
+    if (!supabase) return alert("Please set Supabase .env first.");
+    if (!editingMember?.id) return alert("No member selected.");
+    if (!editingMember.full_name?.trim()) return alert("Please enter member name.");
+
+    const payload = {
+      card_id: editingMember.card_id?.trim() || "",
+      full_name: editingMember.full_name?.trim() || "",
+      phone: editingMember.phone?.trim() || "",
+      email: editingMember.email?.trim() || "",
+      birthday: editingMember.birthday || "",
+      suburb: editingMember.suburb?.trim() || "",
+      gender: editingMember.gender || "",
+      referral_source: editingMember.referral_source || "",
+      sold_by: editingMember.sold_by || "",
+      home_store: editingMember.home_store || "Abbotsford",
+      expiry_date: editingMember.expiry_date || "",
+      payment_method: editingMember.payment_method || "Cash",
+      notes: editingMember.notes || "",
+    };
+
+    const { error } = await supabase
+      .from("members")
+      .update(payload)
+      .eq("id", editingMember.id);
+
+    if (error) return alert(error.message);
+
+    setEditingMember(null);
+    await loadData();
+    alert("Member information updated.");
   }
 
   async function restoreMember(member) {
@@ -1176,6 +1212,7 @@ export default function App() {
                       </div>
                       <div className="rowBtns">
                         <button onClick={() => setSelectedProfileMember(m)}>View Profile</button>
+                        {isOwner && <button onClick={() => setEditingMember({ ...m })}>Edit</button>}
                         <button onClick={() => exportMemberHistoryPDF(m)}>Export PDF</button>
                         <button onClick={() => renewMember(m)}>Renew</button>
                         {isOwner && <button className="danger" onClick={() => deleteMember(m)}>Delete</button>}
@@ -1392,6 +1429,75 @@ export default function App() {
             </div>
             <TableCheckouts rows={checkouts} isOwner={isOwner} onDelete={deleteCheckout} />
           </section>
+        )}
+
+        {editingMember && isOwner && (
+          <div className="modalOverlay">
+            <div className="modalBox">
+              <div className="modalHeader">
+                <h3>Edit Member Information</h3>
+                <button type="button" onClick={() => setEditingMember(null)}>×</button>
+              </div>
+
+              <form onSubmit={updateMember} className="form">
+                <label>Card ID</label>
+                <input value={editingMember.card_id || ""} onChange={(e) => setEditingMember({ ...editingMember, card_id: e.target.value })} />
+
+                <label>Full Name</label>
+                <input value={editingMember.full_name || ""} onChange={(e) => setEditingMember({ ...editingMember, full_name: e.target.value })} />
+
+                <label>Phone</label>
+                <input value={editingMember.phone || ""} onChange={(e) => setEditingMember({ ...editingMember, phone: e.target.value })} />
+
+                <label>Email</label>
+                <input value={editingMember.email || ""} onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })} />
+
+                <label>Date of Birth</label>
+                <input type="date" value={editingMember.birthday || ""} onChange={(e) => setEditingMember({ ...editingMember, birthday: e.target.value })} />
+
+                <label>Suburb / Area</label>
+                <input value={editingMember.suburb || ""} onChange={(e) => setEditingMember({ ...editingMember, suburb: e.target.value })} />
+
+                <label>Gender</label>
+                <select value={editingMember.gender || ""} onChange={(e) => setEditingMember({ ...editingMember, gender: e.target.value })}>
+                  <option value="">Prefer not to say</option>
+                  <option>Female</option>
+                  <option>Male</option>
+                  <option>Other</option>
+                </select>
+
+                <label>Referral Source</label>
+                <select value={editingMember.referral_source || ""} onChange={(e) => setEditingMember({ ...editingMember, referral_source: e.target.value })}>
+                  <option value="">Select</option>
+                  {referralSources.map((x) => <option key={x}>{x}</option>)}
+                </select>
+
+                <label>Sold By / Card Seller</label>
+                <select value={editingMember.sold_by || ""} onChange={(e) => setEditingMember({ ...editingMember, sold_by: e.target.value })}>
+                  <option value="">Select seller</option>
+                  {sellers.map((x) => <option key={x}>{x}</option>)}
+                </select>
+
+                <label>Expiry Date</label>
+                <input type="date" value={editingMember.expiry_date || ""} onChange={(e) => setEditingMember({ ...editingMember, expiry_date: e.target.value })} />
+
+                <label>Payment Method</label>
+                <select value={editingMember.payment_method || "Cash"} onChange={(e) => setEditingMember({ ...editingMember, payment_method: e.target.value })}>
+                  <option>Cash</option>
+                  <option>Card</option>
+                  <option>Bank Transfer</option>
+                </select>
+
+                <label>Notes</label>
+                <textarea value={editingMember.notes || ""} onChange={(e) => setEditingMember({ ...editingMember, notes: e.target.value })} />
+
+                <div className="rowBtns modalActions">
+                  <button className="primary" type="submit">Save Changes</button>
+                  <button type="button" onClick={() => setEditingMember(null)}>Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </main>
     </div>
