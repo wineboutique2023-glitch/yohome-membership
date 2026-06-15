@@ -589,3 +589,40 @@ th {
     margin-top: 12px;
   }
 }
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modalBox {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modalHeader button {
+  font-size: 26px;
+  background: transparent;
+  color: #24362d;
+  padding: 4px 12px;
+}
+
+.modalActions {
+  margin-top: 18px;
+}
