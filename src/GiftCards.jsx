@@ -47,17 +47,7 @@ function History({ entries }) {
   })}</tbody></table></div>;
 }
 
-export default function GiftCards({ client }) {
-  const [session, setSession] = useState(null);
-  useEffect(() => {
-    const { data } = client.auth.onAuthStateChange((_event, current) => setSession(current));
-    return () => data.subscription.unsubscribe();
-  }, [client]);
-
-  return session ? <Workspace key={session.user.id} userId={session.user.id} client={client} /> : <SignIn client={client} />;
-}
-
-function SignIn({ client }) {
+export function SignIn({ client, title }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   async function signIn(event) {
@@ -74,7 +64,7 @@ function SignIn({ client }) {
       setBusy(false);
     }
   }
-  return <section className="panel gift-panel"><h3>Gift card sign-in</h3>
+  return <section className="panel gift-panel"><h3>{title}</h3>
     <form className="form" onSubmit={signIn}>
       <label>Email<input type="email" name="email" autoComplete="username" required /></label>
       <label>Password<input type="password" name="password" autoComplete="current-password" required /></label>
@@ -84,7 +74,7 @@ function SignIn({ client }) {
   </section>;
 }
 
-function Workspace({ client, userId }) {
+export default function GiftCards({ client, userId, members, defaultMember, sellers, crmServices, onLedgerChange }) {
   const storageKey = `yohome-gift-pending:${userId}`;
   const [request, setRequest] = useState(() => {
     try {
@@ -153,6 +143,7 @@ function Workspace({ client, userId }) {
         saveRequest(null);
         setResult(data);
         setMessage("Saved.");
+        if (["sale", "redeem", "exchange"].includes(action)) void onLedgerChange();
       }
       onResult?.(data);
     } catch (error) {
@@ -168,6 +159,8 @@ function Workspace({ client, userId }) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
     const args = Object.fromEntries([...fields].filter(([, value]) => value !== ""));
+    if (args.member_id === "guest") delete args.member_id;
+    if (args.unused_value_confirmed === "true") args.unused_value_confirmed = true;
     try {
       if (args.amount !== undefined) args.amount = cents(args.amount);
     } catch (error) {
@@ -216,7 +209,7 @@ function Workspace({ client, userId }) {
   if (owner) pages.push("Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports");
 
   return <section className="panel gift-panel">
-    <div className="gift-actions"><h3>Gift Cards</h3><button type="button" disabled={busy} onClick={() => void client.auth.signOut()}>Sign out</button></div>
+    <h3>Gift Cards</h3>
     {request && <div className="gift-actions">
       <p>A saved {request.action} submission is awaiting a result.</p>
       <button type="button" disabled={busy} onClick={() => void run(request.action, request.args, () => {
@@ -235,7 +228,11 @@ function Workspace({ client, userId }) {
       <fieldset key={page} disabled={busy} className="gift-fields">
         {page === "Checkout" && <>
           <form className="form" onSubmit={(e) => submit(e, "lookup", (value) => { setCard(value); setQuote(null); setResult(null); })}>
-            <Fields barcode /><button>Find card</button>
+            <label>Barcode<input name="barcode" autoComplete="off" autoFocus required onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              event.currentTarget.form.requestSubmit();
+            }} /></label><button>Find card</button>
           </form>
           {card && <>
             <p>{card.barcode} · {card.is_expired ? "expired" : card.status} · {aud(card.balance)}
@@ -252,7 +249,18 @@ function Workspace({ client, userId }) {
                   { barcode: card.barcode, service_code: quote.service_code, quote });
               }}>
                 <p>{quote.service_name} · Apply {aud(quote.redeemed)} · Customer pays {aud(quote.topup)} · Remaining {aud(quote.after)}</p>
-                {quote.service_value_released > 0 && <p>This uses the entire service gift. Unused service value: {aud(quote.service_value_released)}.</p>}
+                <label>Customer<select name="member_id" defaultValue={defaultMember}>
+                  <option value="guest">Guest</option>
+                  {members.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.card_id}</option>)}
+                </select></label>
+                <label>Therapist<select name="therapist">
+                  <option value="">Select</option>
+                  {sellers.map((name) => <option key={name}>{name}</option>)}
+                </select></label>
+                {quote.service_value_released > 0 && <>
+                  <p>Unused service gift value: <strong>{aud(quote.service_value_released)}</strong>. The entire gift will be used.</p>
+                  <label><input name="unused_value_confirmed" type="checkbox" value="true" required /> Customer confirmed they accept forfeiting this unused value</label>
+                </>}
                 {quote.topup > 0 && <><Fields payment /><label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label></>}
                 {card.kind === "legacy" && quote.after > 0 && <>
                   <label>Replacement barcode (leave blank to keep the approved legacy card)<input name="replacement" autoComplete="off" onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
@@ -312,7 +320,10 @@ function Workspace({ client, userId }) {
               { code: data.service_code, name: data.name, price: data.price, active: data.active },
             ] }));
           })}>
-            <label>Service code<input name="service_code" required /></label>
+            <label>CRM service<select name="service_code" required>
+              <option value="">Select</option>
+              {crmServices.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.id}</option>)}
+            </select></label>
             <label>Service name<input name="name" required /></label>
             <Fields amount="Service price (AUD)" />
             <label>Status<select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></label>
