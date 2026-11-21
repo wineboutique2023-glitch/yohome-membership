@@ -11,6 +11,7 @@ const stranger = randomUUID();
 const member = randomUUID();
 const removed = randomUUID();
 const expiry = "2099-11-21";
+let originalRows;
 
 async function sql(file) {
   return readFile(new URL(file, import.meta.url), "utf8");
@@ -23,10 +24,13 @@ before(async () => {
     ('original','Original',100,80,35),('upgrade','Upgrade',140,110,45),('cheaper','Cheaper',60,50,25);
     insert into public.checkouts(service_name,duration,original_price,final_price,staff_pay,shop_profit)
       values ('Pre-existing receipt',1,25,25,10,15);`);
+  const original = await db.query("select (select jsonb_agg(to_jsonb(m) order by id) from public.members m) as members, (select jsonb_agg(to_jsonb(c) order by id) from public.checkouts c) as checkouts");
+  originalRows = original.rows[0];
   await db.exec(await sql("../supabase/migrations/20261121000000_gift_cards.sql"));
   await db.query("insert into auth.users values ($1),($2),($3)", [owner, staff, stranger]);
   await db.query("insert into gift_private.users(user_id,role,display_name) values ($1,'owner','Owner'),($2,'staff','Staff')", [owner, staff]);
   await db.exec(await sql("../supabase/migrations/20261121010000_crm_auth_gift_checkout.sql"));
+  await db.exec(await sql("../supabase/migrations/20261121020000_preserve_legacy_crm_behaviour.sql"));
 });
 after(() => db.close());
 
@@ -58,6 +62,8 @@ async function sell(barcode) {
 }
 
 test("roles enforce permissions and preserve existing data", async () => {
+  const actual = await db.query("select (select jsonb_agg(to_jsonb(m) order by id) from public.members m) as members, (select jsonb_agg(to_jsonb(c)-'gift_request_id'-'gift_applied'-'gift_unused_value'-'cash_received' order by id) from public.checkouts c) as checkouts");
+  assert.deepEqual(actual.rows[0], originalRows);
   for (const table of ["members", "checkouts", "service_items", "sales_people", "system_settings"]) {
     await assert.rejects(as(null, `select * from public.${table}`), /permission denied/);
     assert.deepEqual(await as(staff, `select * from public.${table}`), []);
@@ -135,4 +141,25 @@ test("cheaper service requires explicit confirmation and legacy exchange keeps i
   assert.equal((await gift(staff, "lookup", { barcode: replacement })).balance, 4000);
   assert.equal((await gift(staff, "lookup", { barcode })).status, "exchanged");
   assert.equal((await crm(owner, "receipts")).total, before.total);
+});
+
+test("legacy checkout retains configured discount, first-hour note, UTC date and payroll", async () => {
+  await db.exec(`insert into public.service_items(id,name,duration,normal_price,member_price,staff_pay,discount_type,discount_value)
+    values ('old-discount','Old service',1,140,null,35,'%',25), ('old-short','Old short',0.5,60,50,15,'$',10);`);
+  await crm(staff, "checkout", { service_id: "old-discount", member_id: member, expected_price: 105,
+    payment_method: "Cash", checkout_date: "2025-05-01", therapist: "Before" });
+  await crm(staff, "checkout", { service_id: "old-discount", member_id: member, expected_price: 40,
+    payment_method: "Redeem First Hour Massage", checkout_date: "2025-05-02" });
+  await assert.rejects(crm(staff, "checkout", { service_id: "old-short", member_id: member, expected_price: 0,
+    payment_method: "Redeem First Hour Massage" }), /at least 60 minutes/);
+  const snapshot = await crm(owner, "snapshot");
+  const rows = snapshot.checkouts.filter((row) => row.service_name === "Old service");
+  assert.deepEqual(rows.reverse().map((r) => [r.final_price, r.staff_pay, r.shop_profit, r.created_at.slice(0,19), r.price_note]), [
+    [105,35,70,"2025-05-01T12:00:00","Member price applied."],
+    [40,35,5,"2025-05-02T12:00:00","Redeem First Hour applied: $100 value redeemed. Customer pays extra $40.00."],
+  ]);
+  const view = await crm(owner, "snapshot", { staff_view: true });
+  assert.ok(view.checkouts.every((r) => !Object.hasOwn(r, "staff_pay") && !Object.hasOwn(r, "shop_profit")));
+  assert.ok(view.members.every((m) => !Object.hasOwn(m, "notes") && !m.deleted));
+  await assert.rejects(crm(staff, "renew_member", { member_id: member, expiry_date: "2099-01-01" }), /one-year rule/);
 });

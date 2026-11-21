@@ -189,7 +189,8 @@ function AuthorisedCRM({ session }) {
 
 function CRM({ role, userId }) {
   const [tab, setTab] = useState("dashboard");
-  const isOwner = role === "owner";
+  const [viewMode, setViewMode] = useState(role);
+  const isOwner = role === "owner" && viewMode === "owner";
   const [receipts, setReceipts] = useState(null);
   const [giftMember, setGiftMember] = useState("guest");
 
@@ -247,15 +248,18 @@ function CRM({ role, userId }) {
   });
 
   const barcodeRef = useRef(null);
+  const loadRequest = useRef(0);
 
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
 
   const loadData = useCallback(async () => {
+    const request = ++loadRequest.current;
     setLoading(true);
     try {
       const [{ data, error }, income] = await Promise.all([
-        crm("snapshot"), isOwner ? crm("receipts") : Promise.resolve(null),
+        crm("snapshot", { staff_view: !isOwner }), isOwner ? crm("receipts") : Promise.resolve(null),
       ]);
+      if (loadRequest.current !== request) return;
       if (error || income?.error) throw error || income.error;
       setMembers(data.members.filter((m) => m.deleted === false));
       setDeletedMembers(data.members.filter((m) => m.deleted === true));
@@ -267,10 +271,11 @@ function CRM({ role, userId }) {
       setMembershipFeeInput(String(data.membership_fee));
       setReceipts(income?.data ?? null);
     } catch (error) {
+      if (loadRequest.current !== request) return;
       setReceipts(null);
       alert(error.message || "Could not load CRM data.");
     } finally {
-      setLoading(false);
+      if (loadRequest.current === request) setLoading(false);
     }
   }, [isOwner]);
 
@@ -430,9 +435,11 @@ function CRM({ role, userId }) {
       activeMembers: activeMembers.length,
       expiredMembers: expiredMembers.length,
       newThisMonth: newThisMonth.length,
+      todayIncome: todayCheckouts.reduce((s, x) => s + Number(x.final_price || 0), 0),
       todayStaff: todayCheckouts.reduce((s, x) => s + Number(x.staff_pay || 0), 0),
       todayProfit: todayCheckouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0),
       todayCount: todayCheckouts.length,
+      monthRevenue: monthCheckouts.reduce((s, x) => s + Number(x.final_price || 0), 0),
       monthProfit: monthCheckouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0),
       groupCounts,
       suburbCounts,
@@ -567,7 +574,7 @@ function CRM({ role, userId }) {
   }
 
   async function renewMember(member) {
-    const { error } = await crm("renew_member", { member_id: member.id });
+    const { error } = await crm("renew_member", { member_id: member.id, expiry_date: expiryOneYear() });
 
     if (error) return alert(error.message);
     await loadData();
@@ -798,9 +805,8 @@ function CRM({ role, userId }) {
     return checkouts
       .filter((r) => {
         const sameMemberId = r.member_id && member.id && r.member_id === member.id;
-        const sameName =
-          !r.member_id && r.gift_applied == null && (r.customer_type === "member" || !r.customer_type) &&
-          hasUniqueName && r.customer_name?.trim().toLowerCase() === memberName;
+        const sameName = !r.member_id && r.gift_applied == null && hasUniqueName &&
+          r.customer_name?.trim().toLowerCase() === memberName;
 
         return sameMemberId || sameName;
       })
@@ -810,15 +816,13 @@ function CRM({ role, userId }) {
   function getMemberStats(member) {
     const history = getMemberHistory(member);
     const totalVisits = history.length;
-    const serviceValue = history.reduce((sum, r) => sum + Number(r.final_price || 0), 0);
-    const paidAtCheckout = history.reduce((sum, r) => sum + Number(r.cash_received ?? r.final_price ?? 0), 0);
+    const totalSpent = history.reduce((sum, r) => sum + Number(r.final_price || 0), 0);
     const lastVisit = history[0]?.created_at ? new Date(history[0].created_at).toLocaleString() : "No visits yet";
 
     return {
       history,
       totalVisits,
-      serviceValue,
-      paidAtCheckout,
+      totalSpent,
       lastVisit,
     };
   }
@@ -826,7 +830,7 @@ function CRM({ role, userId }) {
   function exportMemberHistoryPDF(member) {
     if (!member) return alert("Please select a member first.");
 
-    const { history, totalVisits, serviceValue, paidAtCheckout, lastVisit } = getMemberStats(member);
+    const { history, totalVisits, totalSpent, lastVisit } = getMemberStats(member);
     const expired = new Date(member.expiry_date) < new Date(todayDate());
     const doc = new jsPDF();
 
@@ -844,7 +848,7 @@ function CRM({ role, userId }) {
     doc.text(`Membership: ${expired ? "Expired" : "Active"}`, 14, 73);
     doc.text(`Expiry Date: ${member.expiry_date || ""}`, 14, 80);
     doc.text(`Total Visits: ${totalVisits}`, 14, 87);
-    doc.text(`Service Value: $${money(serviceValue)} | Paid at Checkout: $${money(paidAtCheckout)}`, 14, 94);
+    doc.text(`Total Paid: $${money(totalSpent)}`, 14, 94);
     doc.text(`Last Visit: ${lastVisit}`, 14, 101);
 
     autoTable(doc, {
@@ -994,29 +998,31 @@ function CRM({ role, userId }) {
 
   function downloadIncomePDF() {
     const doc = new jsPDF();
-    if (!receipts) return alert("Refresh the CRM before exporting receipts.");
+    if (giftEnabled && !receipts) return alert("Refresh the CRM before exporting receipts.");
+    const legacyIncome = checkouts.reduce((sum, row) => sum + Number(row.final_price || 0), 0);
+    const totalIncome = receipts?.total ?? legacyIncome;
+    const hasGift = Boolean(receipts?.gift_sales || receipts?.older_topups || checkouts.some((row) => row.gift_applied != null));
     const totalStaff = checkouts.reduce((s, x) => s + Number(x.staff_pay || 0), 0);
     const totalProfit = checkouts.reduce((s, x) => s + Number(x.shop_profit || 0), 0);
 
     doc.text("YOHOME Income Report", 14, 15);
-    doc.text(`Total Receipts: $${money(receipts.total)}`, 14, 25);
+    doc.text(`Total Income: $${money(totalIncome)}`, 14, 25);
     doc.text(`Staff Pay: $${money(totalStaff)}`, 14, 33);
-    doc.text(`Service Margin: $${money(totalProfit)}`, 14, 41);
-    doc.text(`Gift card sales: $${money(receipts.gift_sales)} | Older gift top-ups: $${money(receipts.older_topups)}`, 14, 49);
+    doc.text(`Shop Profit: $${money(totalProfit)}`, 14, 41);
 
+    if (hasGift) doc.text(`Gift card sales: $${money(receipts?.gift_sales)} | Older gift top-ups: $${money(receipts?.older_topups)}`, 14, 49);
     autoTable(doc, {
-      startY: 65,
-      head: [["Date", "Customer", "Service", "Therapist", "Cash received", "Gift applied", "Staff", "Profit", "Payment"]],
+      startY: hasGift ? 57 : 50,
+      head: [["Date", "Customer", "Service", "Therapist", "Income", "Staff", "Profit", "Payment"]],
       body: checkouts.map((r) => [
         r.created_at ? new Date(r.created_at).toLocaleString() : "",
         r.customer_name || "",
         r.service_name || "",
         r.therapist || "",
         `$${money(r.cash_received ?? r.final_price)}`,
-        `$${money(r.gift_applied)}`,
-        r.staff_pay == null ? "—" : `$${money(r.staff_pay)}`,
-        r.shop_profit == null ? "—" : `$${money(r.shop_profit)}`,
-        r.payment_method || "",
+        `$${money(r.staff_pay)}`,
+        `$${money(r.shop_profit)}`,
+        r.gift_applied == null ? r.payment_method || "" : `${r.payment_method} ($${money(r.gift_applied)} applied)`,
       ]),
     });
 
@@ -1045,7 +1051,25 @@ function CRM({ role, userId }) {
         <p>Membership CRM</p>
 
         <div className="modeBox">
-          <span>{isOwner ? "Owner" : "Staff"}</span>
+          <span>Current View</span>
+          <select value={viewMode} onChange={(event) => {
+            const next = event.target.value === "owner" && role === "owner" ? "owner" : "staff";
+            if (next === viewMode) return;
+            loadRequest.current++;
+            setMembers([]);
+            setCheckouts([]);
+            setDeletedMembers([]);
+            setDeletedCheckouts([]);
+            setServices(fallbackServices);
+            setReceipts(null);
+            setSelectedProfileMember(null);
+            setEditingMember(null);
+            setViewMode(next);
+            setTab("dashboard");
+          }}>
+            <option value="staff">Staff View</option>
+            {role === "owner" && <option value="owner">Owner View</option>}
+          </select>
           <button onClick={() => void supabase.auth.signOut()}>Sign out</button>
         </div>
 
@@ -1078,10 +1102,10 @@ function CRM({ role, userId }) {
               <Card title="Active Members" value={analytics.activeMembers} />
               <Card title="Expired Members" value={analytics.expiredMembers} />
               <Card title="Today Checkouts" value={analytics.todayCount} />
-              {isOwner && <Card title="Today Receipts" value={receipts ? `$${money(receipts.today)}` : "—"} />}
-              {isOwner && <Card title="Today Service Margin" value={`$${money(analytics.todayProfit)}`} />}
-              {isOwner && <Card title="Monthly Receipts" value={receipts ? `$${money(receipts.month)}` : "—"} />}
-              {isOwner && <Card title="Monthly Service Margin" value={`$${money(analytics.monthProfit)}`} />}
+              {isOwner && <Card title="Today Income" value={`$${money(analytics.todayIncome)}`} />}
+              {isOwner && <Card title="Today Profit" value={`$${money(analytics.todayProfit)}`} />}
+              {isOwner && <Card title="Monthly Revenue" value={`$${money(analytics.monthRevenue)}`} />}
+              {isOwner && <Card title="Monthly Profit" value={`$${money(analytics.monthProfit)}`} />}
             </div>
 
             <div className="grid-two">
@@ -1267,7 +1291,7 @@ function CRM({ role, userId }) {
           </div>
         )}
 
-        {tab === "gift cards" && giftEnabled && <GiftCards client={supabase} userId={userId} members={members} defaultMember={giftMember} sellers={sellers} crmServices={services} onLedgerChange={loadData} />}
+        {tab === "gift cards" && giftEnabled && <GiftCards ownerView={isOwner} client={supabase} userId={userId} members={members} defaultMember={giftMember} sellers={sellers} crmServices={services} onLedgerChange={loadData} />}
 
         {tab === "services" && isOwner && (
           <div className="grid-two">
@@ -1552,15 +1576,11 @@ function MemberProfile({ member, history, stats, onExportPDF }) {
         <div className="profileStatCard">
           <div className="profileStatIcon">$</div>
           <div>
-            <span>Service Value</span>
-            <strong>${money(stats.serviceValue)}</strong>
+            <span>Total Spent</span>
+            <strong>${money(stats.totalSpent)}</strong>
           </div>
         </div>
 
-        <div className="profileStatCard">
-          <div className="profileStatIcon">$</div>
-          <div><span>Paid at Checkout</span><strong>${money(stats.paidAtCheckout)}</strong></div>
-        </div>
         <div className="profileStatCard">
           <div className="profileStatIcon">📅</div>
           <div>

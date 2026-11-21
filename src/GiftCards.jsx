@@ -74,7 +74,7 @@ export function SignIn({ client, title }) {
   </section>;
 }
 
-export default function GiftCards({ client, userId, members, defaultMember, sellers, crmServices, onLedgerChange }) {
+export default function GiftCards({ ownerView, client, userId, members, defaultMember, sellers, crmServices, onLedgerChange }) {
   const storageKey = `yohome-gift-pending:${userId}`;
   const [request, setRequest] = useState(() => {
     try {
@@ -198,7 +198,7 @@ export default function GiftCards({ client, userId, members, defaultMember, sell
     if (next === "Reports") void run("report", {}, setReport);
   }
 
-  const owner = overview?.role === "owner";
+  const owner = ownerView && overview?.role === "owner";
   const services = overview?.services ?? [];
   const cardServices = card?.kind === "service" && !services.some((s) => s.code === card.service_code && s.active)
     ? [...services.filter((s) => s.code !== card.service_code), {

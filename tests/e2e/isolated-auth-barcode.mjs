@@ -102,7 +102,7 @@ try {
     .replace("nullif(current_setting('request.jwt.claim.sub',true),'')::uuid", "(auth.jwt()->>'sub')::uuid")
     .replace(/(create or replace function auth.uid\(\)[\s\S]*?\$\$;\n)(create or replace function auth.jwt\(\)[\s\S]*?\$\$;\n)/, "$2$1");
   await admin.query(sql);
-  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql"]) {
+  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql"]) {
     await admin.query(await readFile(new URL(`../../supabase/migrations/${migration}`, import.meta.url), "utf8"));
   }
   await admin.query(`create role authenticator login noinherit password '${restPassword}';
@@ -197,6 +197,10 @@ try {
   await page.getByLabel("Email").fill(ownerCreds.email);
   await page.getByLabel("Password").fill(ownerCreds.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  for (const tab of ["Dashboard", "Members", "Checkout", "Services", "Staff", "Analytics", "Reports", "Settings"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    await page.getByRole("heading", { name: tab.toUpperCase(), exact: true }).waitFor();
+  }
   await page.getByRole("button", { name: "Reports", exact: true }).click();
   await page.getByRole("heading", { name: "Reports & Backup" }).waitFor();
   await page.getByText("Total Receipts", { exact: true }).waitFor();
@@ -204,7 +208,13 @@ try {
   await page.getByRole("button", { name: "Members", exact: true }).click();
   await page.getByRole("button", { name: "View Profile", exact: true }).click();
   await page.getByRole("heading", { name: "Treatment History", exact: true }).waitFor();
+  await page.getByText("Total Spent", { exact: true }).waitFor();
   assert.match(await page.locator(".historyPanel").innerText(), /Cheaper gift service[\s\S]*Gift \$60.00 · Paid \$0.00/);
+  await page.locator(".modeBox select").selectOption("staff");
+  await page.getByText("Total Members", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Reports", exact: true }).count(), 0);
+  await page.locator(".modeBox select").selectOption("owner");
+  await page.getByRole("button", { name: "Reports", exact: true }).waitFor();
   await admin.query("update gift_private.users set active=false where user_id=$1", [staff.user.id]);
   assert.equal(await checkRole(staff.access_token), null);
   console.log("Passed Supabase Auth, PostgREST, PostgreSQL and Chromium end-to-end test with simulated keyboard-wedge scanner input.");
