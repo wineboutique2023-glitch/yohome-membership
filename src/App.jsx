@@ -1,3 +1,4 @@
+import GiftCards from "./GiftCards";
 import { useEffect, useMemo, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { createClient } from "@supabase/supabase-js";
@@ -33,6 +34,12 @@ const fallbackServices = [
 
 const fallbackSellers = ["Zheng", "Tree", "Yuki", "Nancy", "Front Desk", "Other"];
 const referralSources = ["Google", "Walk-in", "Friend Referral", "Instagram", "Facebook", "Doctor / Clinic", "Other"];
+
+const giftClient = supabase && import.meta.env.VITE_ENABLE_GIFT_CARDS === "true"
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { storageKey: "yohome-gift-auth", detectSessionInUrl: false },
+    })
+  : null;
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -1109,6 +1116,8 @@ export default function App() {
           </button>
         ))}
 
+        {giftClient && <button onClick={() => setTab("gift cards")} className={tab === "gift cards" ? "active" : ""}>Gift Cards</button>}
+
         <div className="side-note">{supabase ? "Cloud database connected" : "Supabase not connected yet"}</div>
       </aside>
 
@@ -1239,6 +1248,7 @@ export default function App() {
           <div className="grid-two">
             <section className="panel">
               <h3>Service Checkout</h3>
+              {giftClient && <button type="button" onClick={() => setTab("gift cards")}>Gift Card Checkout</button>}
               <label>Search Member</label>
               <input className="search" placeholder="Phone / Card ID / Name / Email" value={checkoutSearch} onChange={(e) => setCheckoutSearch(e.target.value)} />
               {checkoutSearchResults.length > 0 && (
@@ -1317,6 +1327,8 @@ export default function App() {
             </section>
           </div>
         )}
+
+        {tab === "gift cards" && giftClient && <GiftCards client={giftClient} />}
 
         {tab === "services" && isOwner && (
           <div className="grid-two">

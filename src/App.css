@@ -626,3 +626,55 @@ th {
 .modalActions {
   margin-top: 18px;
 }
+
+.gift-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.gift-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gift-actions button[aria-pressed="true"] {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.gift-fields {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.gift-fields label {
+  display: grid;
+  gap: 5px;
+}
+
+.gift-fields label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+
+.gift-fields input[type="checkbox"] {
+  width: auto;
+}
+
+.gift-review {
+  padding-block: 12px;
+  border-block-end: 1px solid currentColor;
+}
+
+.gift-history {
+  overflow-x: auto;
+}
+
+.gift-history table {
+  min-width: 660px;
+}
