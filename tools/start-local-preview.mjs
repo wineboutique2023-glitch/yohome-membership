@@ -42,7 +42,7 @@ mkdirSync(migrations, { recursive: true });
 const fixture = readFileSync("tests/fixtures/crm.sql", "utf8");
 const publicSchema = fixture.slice(fixture.indexOf("create table public.members"));
 writeFileSync(join(migrations, "20261120000000_synthetic_crm.sql"), publicSchema);
-for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql"]) {
+for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql", "20261121030000_receipt_status_server_only.sql"]) {
   copyFileSync(join("supabase", "migrations", migration), join(migrations, migration));
 }
 

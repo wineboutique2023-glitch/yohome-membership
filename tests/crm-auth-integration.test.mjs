@@ -31,6 +31,7 @@ before(async () => {
   await db.query("insert into gift_private.users(user_id,role,display_name) values ($1,'owner','Owner'),($2,'staff','Staff')", [owner, staff]);
   await db.exec(await sql("../supabase/migrations/20261121010000_crm_auth_gift_checkout.sql"));
   await db.exec(await sql("../supabase/migrations/20261121020000_preserve_legacy_crm_behaviour.sql"));
+  await db.exec(await sql("../supabase/migrations/20261121030000_receipt_status_server_only.sql"));
 });
 after(() => db.close());
 
@@ -86,7 +87,7 @@ test("roles enforce permissions and preserve existing data", async () => {
 test("staff enrols and renews members and checkout validates live prices", async () => {
   const saved = await crm(staff, "add_member", { full_name: "New Member", card_id: "NEW", membership_fee: 1 });
   assert.equal(Number(saved.membership_fee), 100);
-  await crm(staff, "mark_receipt", { member_id: saved.id });
+  await assert.rejects(crm(staff, "mark_receipt", { member_id: saved.id }), /server-managed/);
   await crm(staff, "renew_member", { member_id: saved.id });
   await assert.rejects(crm(staff, "renew_member", { member_id: removed }), /Active member record not found/);
   const args = { service_id: "original", member_id: member, therapist: "Test Therapist", payment_method: "Cash" };
@@ -162,4 +163,27 @@ test("legacy checkout retains configured discount, first-hour note, UTC date and
   assert.ok(view.checkouts.every((r) => !Object.hasOwn(r, "staff_pay") && !Object.hasOwn(r, "shop_profit")));
   assert.ok(view.members.every((m) => !Object.hasOwn(m, "notes") && !m.deleted));
   await assert.rejects(crm(staff, "renew_member", { member_id: member, expiry_date: "2099-01-01" }), /one-year rule/);
+});
+
+test("release: receipt status is server-managed and a $100 legacy card exchanges $50 exactly once", async () => {
+  await assert.rejects(crm(staff, "mark_receipt", { member_id: member }), /server-managed/);
+  await assert.rejects(as(owner, "update public.members set receipt_sent=true where id=$1", [member]), /server-managed/);
+  await db.exec("insert into public.service_items(id,name,normal_price) values ('release-50','Release 50',50)");
+  await gift(owner, "set_service", { service_code: "release-50", name: "Release 50", amount: 5000 });
+  const replacement = "00000050";
+  const barcode = "RELEASE-100";
+  await gift(staff, "claim", { barcode, amount: 10000, reason: "Synthetic old card" });
+  await assert.rejects(gift(staff, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Attempt" }), /Owner access/);
+  await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked" });
+  await gift(owner, "stock", { barcode: replacement });
+  const draft = { barcode, replacement, old_card_collected: true, member_id: member, service_code: "release-50" };
+  const args = { ...draft, quote: await gift(staff, "quote", draft) };
+  const reference = randomUUID();
+  const before = await crm(owner, "receipts");
+  const result = await gift(staff, "exchange", args, reference);
+  assert.deepEqual(await gift(staff, "exchange", args, reference), result);
+  await assert.rejects(gift(staff, "exchange", args), /active unexpired card/);
+  assert.equal((await gift(staff, "lookup", { barcode: replacement })).balance, 5000);
+  assert.equal((await crm(owner, "snapshot")).checkouts.filter((row) => row.gift_request_id === reference).length, 1);
+  assert.equal((await crm(owner, "receipts")).total, before.total);
 });

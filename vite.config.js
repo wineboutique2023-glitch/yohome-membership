@@ -3,7 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 const productionHost = "yubwwqcohdjtvvryvvzs.supabase.co";
-const osStagingHost = "lxwgeszucbvzvlzrvtgi.supabase.co";
+const previewProjectHost = "ncmgkslwzoxozsmmdqli.supabase.co";
 const errorMessage = "Preview must use an explicitly configured standalone Supabase test project and its publishable key.";
 
 export default defineConfig(({ command, mode }) => {
@@ -15,8 +15,7 @@ export default defineConfig(({ command, mode }) => {
   if (isPreview) {
     // Read supplied deployment variables, never fall back to the legacy .env.
     const host = vars.YOHOME_PREVIEW_SUPABASE_HOST;
-    if (!/^[a-z]{20}\.supabase\.co$/.test(host ?? "") ||
-        host === productionHost || host === osStagingHost ||
+    if (host !== previewProjectHost ||
         vars.VITE_SUPABASE_URL?.replace(/\/$/, "") !== `https://${host}` ||
         !vars.VITE_SUPABASE_ANON_KEY?.startsWith("sb_publishable_") ||
         vars.VITE_ENABLE_GIFT_CARDS !== "true") {

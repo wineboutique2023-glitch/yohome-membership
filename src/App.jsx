@@ -9,7 +9,6 @@ import "./App.css";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const TERMS_PDF_URL = import.meta.env.VITE_TERMS_PDF_URL || "";
 
 const supabase =
   SUPABASE_URL && SUPABASE_ANON_KEY
@@ -451,54 +450,11 @@ function CRM({ role, userId }) {
     };
   }, [members, checkouts]);
 
-  function pdfDataUriToBase64(dataUri) {
-    return String(dataUri || "").split(",")[1] || "";
-  }
-
-  function makeMembershipReceiptPDF(member) {
-    const doc = new jsPDF();
-
-    doc.setFontSize(16);
-    doc.text("YOHOME Massage & Myotherapy", 14, 16);
-    doc.setFontSize(13);
-    doc.text("Membership Receipt", 14, 26);
-
-    doc.setFontSize(10);
-    doc.text(`Receipt Date: ${new Date().toLocaleDateString()}`, 14, 40);
-    doc.text(`Member Name: ${member.full_name || ""}`, 14, 48);
-    doc.text(`Member ID: ${member.card_id || ""}`, 14, 56);
-    doc.text(`Phone: ${member.phone || ""}`, 14, 64);
-    doc.text(`Email: ${member.email || ""}`, 14, 72);
-    doc.text(`Join Date: ${member.join_date || todayDate()}`, 14, 80);
-    doc.text(`Expiry Date: ${member.expiry_date || ""}`, 14, 88);
-    doc.text(`Sold By: ${member.sold_by || ""}`, 14, 96);
-    doc.text(`Payment Method: ${member.payment_method || ""}`, 14, 104);
-    doc.text(`Membership Fee: $${money(member.membership_fee || membershipFee)}`, 14, 112);
-
-    autoTable(doc, {
-      startY: 124,
-      head: [["Item", "Amount"]],
-      body: [["YOHOME 12-Month Membership", `$${money(member.membership_fee || membershipFee)}`]],
-    });
-
-    doc.setFontSize(9);
-    doc.text("Thank you for purchasing a YOHOME membership.", 14, 160);
-    doc.text("Please keep this receipt for your records.", 14, 167);
-
-    return pdfDataUriToBase64(doc.output("datauristring"));
-  }
-
   async function sendMembershipReceiptEmail(member) {
     if (!member.email) return { ok: false, skipped: true };
 
-    const receiptPdfBase64 = makeMembershipReceiptPDF(member);
-
     const { data, error } = await supabase.functions.invoke("send-membership-email", {
-      body: {
-        member,
-        receiptPdfBase64,
-        termsPdfUrl: TERMS_PDF_URL,
-      },
+      body: { member_id: member.id },
     });
 
     if (error) {
@@ -543,8 +499,6 @@ function CRM({ role, userId }) {
       const emailResult = await sendMembershipReceiptEmail(savedMember);
 
       if (emailResult.ok) {
-        await crm("mark_receipt", { member_id: savedMember.id });
-
         emailMessage = " Receipt email sent.";
       } else {
         emailMessage = " Member saved, but email was not sent. Please check Edge Function / Resend settings.";

@@ -102,7 +102,7 @@ try {
     .replace("nullif(current_setting('request.jwt.claim.sub',true),'')::uuid", "(auth.jwt()->>'sub')::uuid")
     .replace(/(create or replace function auth.uid\(\)[\s\S]*?\$\$;\n)(create or replace function auth.jwt\(\)[\s\S]*?\$\$;\n)/, "$2$1");
   await admin.query(sql);
-  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql"]) {
+  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql", "20261121030000_receipt_status_server_only.sql"]) {
     await admin.query(await readFile(new URL(`../../supabase/migrations/${migration}`, import.meta.url), "utf8"));
   }
   await admin.query(`create role authenticator login noinherit password '${restPassword}';
