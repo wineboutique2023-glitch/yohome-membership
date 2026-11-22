@@ -319,41 +319,63 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
               {card.service_name && ` · ${card.service_name} (${aud(card.service_value)} original value)`}
               {card.expires_on && ` · Expires ${card.expires_on}`}</p>
             {card.status === "active" && !card.is_expired && <>
-              <form key={card.barcode} className="form" onSubmit={(e) => submit(e, "quote", setQuote, { barcode: card.barcode })}>
-                <ServiceSelect services={cardServices} onChange={() => setQuote(null)} />
-                {card.kind === "dollar" && <label>Redeem Amount (AUD)
-                  <input name="redeem_amount" inputMode="decimal" placeholder="Leave blank to apply available balance" onChange={() => setQuote(null)} />
-                </label>}
-                <button>Calculate gift card payment</button>
-              </form>
-              {quote && <form key={JSON.stringify(quote)} className="form" onSubmit={(e) => {
+              <form key={card.barcode} className="form" onSubmit={(e) => {
+                if (e.nativeEvent.submitter?.value === "quote") {
+                  const fields = new FormData(e.currentTarget);
+                  e.preventDefault();
+                  if (!fields.get("service_code")) {
+                    setMessage("Select a service.");
+                    setIsError(true);
+                    return;
+                  }
+                  const args = { barcode: card.barcode, service_code: fields.get("service_code") };
+                  try {
+                    if (fields.get("redeem_amount")) args.redeem_amount = cents(fields.get("redeem_amount"));
+                  } catch (error) {
+                    setMessage(error.message);
+                    setIsError(true);
+                    return;
+                  }
+                  void run("quote", args, setQuote);
+                  return;
+                }
+                e.preventDefault();
+                if (!quote) return;
                 const exchange = Boolean(new FormData(e.currentTarget).get("replacement"));
                 submit(e, exchange ? "exchange" : "redeem", () => { setCard(null); setQuote(null); },
-                  { barcode: card.barcode, service_code: quote.service_code, quote, ...(card.kind === "dollar" && { redeem_amount: quote.redeemed }) });
+                  { barcode: card.barcode, service_code: quote.service_code, quote,
+                    ...(card.kind === "dollar" && { redeem_amount: quote.redeemed }) });
               }}>
+                <ServiceSelect services={cardServices} onChange={() => setQuote(null)} />
                 <label>Therapist<select name="therapist" required>
                   <option value="">Select</option>
                   {sellers.map((name) => <option key={name}>{name}</option>)}
                 </select></label>
                 <label>Service Date<input name="checkout_date" type="date" defaultValue={serviceDate} required /></label>
-                {quote.topup > 0 ? <Fields payment /> : <label>Payment Method<input value="Gift Card" readOnly /></label>}
+                {card.kind === "dollar" ? <label>Redeem Amount (AUD)
+                  <input name="redeem_amount" inputMode="decimal" placeholder="Leave blank to apply available balance" onChange={() => setQuote(null)} />
+                </label> : <label>Redeem Amount (AUD)<input value={quote ? aud(quote.redeemed) : ""} readOnly /></label>}
+                {quote?.topup > 0 ? <Fields payment /> : <label>Payment Method<input value="Gift Card" readOnly /></label>}
                 <div className="priceBox">
-                  <p>Service Price: {aud(quote.service_price)}</p>
-                  <p>Gift Card Applied: {aud(quote.redeemed)}</p>
-                  <p>Customer Pays: {aud(quote.topup)}</p>
-                  <p>Remaining Card Balance: {aud(quote.after)}</p>
+                  <p>Service Price: {quote ? aud(quote.service_price) : "—"}</p>
+                  <p>Gift Card Applied: {quote ? aud(quote.redeemed) : "—"}</p>
+                  <p>Remaining Balance: {aud(quote?.after ?? card.balance)}</p>
+                  <p>Customer Pays: {quote ? aud(quote.topup) : "—"}</p>
                 </div>
-                {quote.service_value_released > 0 && <>
+                {quote?.service_value_released > 0 && <>
                   <p>Unused service gift value: <strong>{aud(quote.service_value_released)}</strong>. The entire gift will be used.</p>
                   <label><input name="unused_value_confirmed" type="checkbox" value="true" required /> Customer confirmed they accept forfeiting this unused value</label>
                 </>}
-                {quote.topup > 0 && <label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label>}
-                {card.kind === "legacy" && quote.after > 0 && <>
+                {quote?.topup > 0 && <label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label>}
+                {card.kind === "legacy" && quote?.after > 0 && <>
                   <label>Replacement barcode (leave blank to keep the approved legacy card)<input name="replacement" autoComplete="off" onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
                   <label><input name="old_card_collected" type="checkbox" value="true" /> Old physical card collected for exchange</label>
                 </>}
-                <button className="primary">Confirm Checkout</button>
-              </form>}
+                <div className="gift-actions">
+                  <button value="quote" formNoValidate>Calculate gift card payment</button>
+                  <button className="primary" disabled={!quote}>Confirm Checkout</button>
+                </div>
+              </form>
             </>}
             {card.kind === "legacy" && card.status === "active" && !card.is_expired && !quote && <>
               <h4>Replace Old Card</h4>
