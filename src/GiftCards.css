@@ -63,3 +63,85 @@
   background: #f7faf7;
   overflow-wrap: anywhere;
 }
+
+.gift-workspace .gift-checkout {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 576px;
+  background: #fff;
+  border: 1px solid #dce7de;
+  border-radius: 14px;
+  padding: 10px;
+  text-align: left;
+}
+
+.gift-workspace .gift-checkout .form {
+  gap: 10px;
+  margin: 0;
+}
+
+.gift-workspace .gift-checkout label {
+  justify-items: stretch;
+  font-weight: 500;
+}
+
+.gift-workspace .gift-checkout :is(input:not([type="checkbox"]), select) {
+  box-sizing: border-box;
+  border-radius: 20px;
+  min-height: 36px;
+}
+
+.gift-checkout-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gift-checkout .gift-scan-status {
+  min-height: 1.4em;
+  margin: 3px 0 8px;
+  color: #526358;
+  overflow-wrap: anywhere;
+}
+
+.gift-checkout-totals {
+  margin: 4px 8px 0;
+}
+
+.gift-checkout-totals div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-block: 4px;
+}
+
+.gift-checkout-totals dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.gift-checkout-totals .gift-checkout-pay {
+  justify-content: space-between;
+  border-top: 1px solid #e5ebe6;
+  margin-top: 8px;
+  padding-block: 12px;
+  color: #234c38;
+  font-weight: 700;
+}
+
+.gift-checkout .primary {
+  width: 100%;
+  border-radius: 20px;
+}
+
+.gift-checkout .primary:disabled {
+  background: #edf0ed;
+  color: #59665f;
+  cursor: not-allowed;
+}
+
+.gift-checkout-old {
+  border-top: 1px solid #e5ebe6;
+  margin-top: 14px;
+  padding-top: 12px;
+}

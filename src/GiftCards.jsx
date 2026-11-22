@@ -38,8 +38,8 @@ function serviceLabel(service) {
   return `${service.name}${duration} · ${aud(service.price)}`;
 }
 
-function ServiceSelect({ services, onChange }) {
-  return <label>Service<select name="service_code" required onChange={onChange}>
+function ServiceSelect({ services, value, onChange }) {
+  return <label>Service<select name="service_code" value={value} required onChange={onChange}>
     <option value="">Select service</option>
     {services.filter((s) => s.active).map((s) => <option key={s.code} value={s.code}>{serviceLabel(s)}</option>)}
   </select></label>;
@@ -126,6 +126,10 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
   const [claimOld, setClaimOld] = useState(false);
   const [salePayment, setSalePayment] = useState("");
   const [quote, setQuote] = useState(null);
+  const [quoteError, setQuoteError] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [checkoutService, setCheckoutService] = useState("");
+  const [redeemInput, setRedeemInput] = useState("");
   const [saleType, setSaleType] = useState("dollar");
   const [saleFamily, setSaleFamily] = useState("");
   const [saleService, setSaleService] = useState("");
@@ -151,6 +155,29 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
     });
     return () => { current = false; };
   }, [client]);
+
+  const eligibleBarcode = page === "Checkout" && card?.status === "active" && !card.is_expired
+    ? card.barcode : null;
+  const editableAmount = card?.kind === "dollar";
+  useEffect(() => {
+    if (!eligibleBarcode || !checkoutService) return;
+    let current = true;
+    const timer = setTimeout(async () => {
+      try {
+        const args = { barcode: eligibleBarcode, service_code: checkoutService };
+        if (editableAmount && redeemInput) args.redeem_amount = cents(redeemInput);
+        const { data, error } = await client.rpc("membership_gift_card", { action_name: "quote", args });
+        if (error) throw new Error(error.message);
+        if (current) {
+          setQuote(data);
+          setQuoteError("");
+        }
+      } catch (error) {
+        if (current) setQuoteError(error.message);
+      }
+    }, 250);
+    return () => { current = false; clearTimeout(timer); };
+  }, [client, eligibleBarcode, checkoutService, editableAmount, redeemInput]);
 
   function saveRequest(value) {
     if (value) sessionStorage.setItem(storageKey, JSON.stringify(value));
@@ -224,6 +251,13 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
     }, () => { setCard(null); setQuote(null); }, true);
   }
 
+  function findCheckoutCard() {
+    const barcode = barcodeInput.trim();
+    if (!barcode || barcode === card?.barcode || barcode === missingBarcode) return;
+    setResult(null);
+    void run("lookup", { barcode }, setCard);
+  }
+
   function selectPage(next) {
     if (request) {
       setMessage("Retry the previous submission before leaving this page.");
@@ -231,6 +265,10 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
       return;
     }
     setPage(next);
+    setBarcodeInput("");
+    setCheckoutService("");
+    setRedeemInput("");
+    setQuoteError("");
     setCard(null);
     setQuote(null);
     setResult(null);
@@ -287,109 +325,91 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
         )}</div>
       </details>
       <fieldset key={page} disabled={busy} className="gift-fields">
-        <h4>{pageLabels[page] ?? page}</h4>
-        {page === "Checkout" && <>
+        {page !== "Checkout" && <h4>{pageLabels[page] ?? page}</h4>}
+        {page === "Checkout" && <div className="gift-checkout">
+          <h4>Use Gift Card</h4>
+          <label>Scan Gift Card Barcode<input value={barcodeInput} placeholder="Scan or enter barcode"
+            autoComplete="off" onBlur={findCheckoutCard}
+            onChange={(e) => {
+              setBarcodeInput(e.target.value);
+              setCard(null);
+              setQuote(null);
+              setQuoteError("");
+              setMissingBarcode("");
+              setClaimOld(false);
+              setMessage("");
+              setResult(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); findCheckoutCard(); }
+            }} /></label>
+          <div className="gift-scan-status" aria-live="polite">{card ?
+            `${card.barcode} · ${card.is_expired ? "Expired" : card.status === "spent" ? "Fully Redeemed" : card.status}${card.expires_on ? ` · Expires ${card.expires_on}` : ""}`
+            : "Scan a card or press Enter to check its balance."}</div>
           <form className="form" onSubmit={(e) => {
-            setCard(null);
-            setQuote(null);
-            setResult(null);
-            setMissingBarcode("");
-            setClaimOld(false);
-            submit(e, "lookup", setCard);
+            e.preventDefault();
+            if (!eligibleBarcode || !quote || request) return;
+            const exchange = Boolean(new FormData(e.currentTarget).get("replacement"));
+            submit(e, exchange ? "exchange" : "redeem", () => {
+              setCard(null);
+              setQuote(null);
+              setBarcodeInput("");
+              setRedeemInput("");
+            }, { barcode: eligibleBarcode, service_code: quote.service_code, quote,
+              ...(editableAmount && { redeem_amount: quote.redeemed }) });
           }}>
-            <label>Scan Gift Card Barcode<input name="barcode" autoComplete="off" required
-              onChange={() => { setCard(null); setQuote(null); setMissingBarcode(""); setClaimOld(false); }}
-              onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              event.currentTarget.form.requestSubmit();
-            }} /></label><button>Find card</button>
+            <ServiceSelect services={cardServices} value={checkoutService} onChange={(e) => {
+              setCheckoutService(e.target.value); setQuote(null); setQuoteError("");
+            }} />
+            <div className="gift-checkout-pair">
+              <label>Therapist<select name="therapist" required>
+                <option value="">Select therapist</option>
+                {sellers.map((name) => <option key={name}>{name}</option>)}
+              </select></label>
+              <label>Service Date<input name="checkout_date" type="date" defaultValue={serviceDate} required /></label>
+            </div>
+            <label>Redeem Amount ($)<input name={editableAmount ? "redeem_amount" : undefined}
+              inputMode="decimal" value={eligibleBarcode && !editableAmount ? (quote ? (quote.redeemed / 100).toFixed(2) : "") : redeemInput}
+              readOnly={Boolean(eligibleBarcode && !editableAmount)}
+              onChange={(e) => { setRedeemInput(e.target.value); setQuote(null); setQuoteError(""); }} /></label>
+            <label>Extra Payment Method<select name="payment" required={quote?.topup > 0}>
+              <option value="">Select payment method</option>
+              {payments.map((payment) => <option key={payment}>{payment}</option>)}
+            </select></label>
+            {quoteError && <p role="alert">{quoteError}</p>}
+            {quote?.service_value_released > 0 && <label>
+              <input name="unused_value_confirmed" type="checkbox" value="true" required />
+              Customer accepts the unused value of {aud(quote.service_value_released)} being forfeited.
+            </label>}
+            {quote?.topup > 0 && <label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label>}
+            {card?.kind === "legacy" && quote?.after > 0 && <>
+              <label>Replacement barcode (optional)<input name="replacement" autoComplete="off"
+                onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
+              <label><input name="old_card_collected" type="checkbox" value="true" /> Old physical card collected for exchange</label>
+            </>}
+            <dl className="gift-checkout-totals">
+              <div><dt>Service Price</dt><dd>{quote ? aud(quote.service_price) : "—"}</dd></div>
+              <div><dt>Gift Card Balance</dt><dd>{card ? aud(card.balance) : "—"}</dd></div>
+              <div><dt>Redeem Now</dt><dd>{quote ? aud(quote.redeemed) : "—"}</dd></div>
+              <div><dt>Remaining Balance</dt><dd>{quote ? aud(quote.after) : "—"}</dd></div>
+              <div className="gift-checkout-pay"><dt>Customer Pays</dt><dd>{quote ? aud(quote.topup) : "—"}</dd></div>
+            </dl>
+            <button className="primary" disabled={!eligibleBarcode || !quote || Boolean(request)}>Confirm Checkout</button>
           </form>
-          {missingBarcode && <>
-            <label><input type="checkbox" checked={claimOld} onChange={(e) => setClaimOld(e.target.checked)} /> Existing Old Gift Card</label>
-            {claimOld && <form className="form" onSubmit={(e) => submit(e, "claim",
-              () => { setMissingBarcode(""); setClaimOld(false); }, { barcode: missingBarcode })}>
+          <div className="gift-checkout-old">
+            <label><input type="checkbox" disabled={!missingBarcode} checked={claimOld}
+              onChange={(e) => setClaimOld(e.target.checked)} /> Existing Previous Old Card</label>
+            {missingBarcode && claimOld && <form className="form" onSubmit={(e) => submit(e, "claim",
+              () => { setMissingBarcode(""); setClaimOld(false); setBarcodeInput(""); }, { barcode: missingBarcode })}>
               <p>Old card: {missingBarcode}</p>
               <Fields amount="Claimed old card value (AUD)" reason="Evidence or old card details" />
               <button>Submit for owner approval</button>
             </form>}
-          </>}
-          {card && <>
-            <p>{card.barcode} · {card.is_expired ? "expired" : card.status === "spent" ? "Fully Redeemed" : card.status} · {aud(card.balance)}
-              {card.service_name && ` · ${card.service_name} (${aud(card.service_value)} original value)`}
-              {card.expires_on && ` · Expires ${card.expires_on}`}</p>
-            {card.status === "active" && !card.is_expired && <>
-              <form key={card.barcode} className="form" onSubmit={(e) => {
-                if (e.nativeEvent.submitter?.value === "quote") {
-                  const fields = new FormData(e.currentTarget);
-                  e.preventDefault();
-                  if (!fields.get("service_code")) {
-                    setMessage("Select a service.");
-                    setIsError(true);
-                    return;
-                  }
-                  const args = { barcode: card.barcode, service_code: fields.get("service_code") };
-                  try {
-                    if (fields.get("redeem_amount")) args.redeem_amount = cents(fields.get("redeem_amount"));
-                  } catch (error) {
-                    setMessage(error.message);
-                    setIsError(true);
-                    return;
-                  }
-                  void run("quote", args, setQuote);
-                  return;
-                }
-                e.preventDefault();
-                if (!quote) return;
-                const exchange = Boolean(new FormData(e.currentTarget).get("replacement"));
-                submit(e, exchange ? "exchange" : "redeem", () => { setCard(null); setQuote(null); },
-                  { barcode: card.barcode, service_code: quote.service_code, quote,
-                    ...(card.kind === "dollar" && { redeem_amount: quote.redeemed }) });
-              }}>
-                <ServiceSelect services={cardServices} onChange={() => setQuote(null)} />
-                <label>Therapist<select name="therapist" required>
-                  <option value="">Select</option>
-                  {sellers.map((name) => <option key={name}>{name}</option>)}
-                </select></label>
-                <label>Service Date<input name="checkout_date" type="date" defaultValue={serviceDate} required /></label>
-                {card.kind === "dollar" ? <label>Redeem Amount (AUD)
-                  <input name="redeem_amount" inputMode="decimal" placeholder="Leave blank to apply available balance" onChange={() => setQuote(null)} />
-                </label> : <label>Redeem Amount (AUD)<input value={quote ? aud(quote.redeemed) : ""} readOnly /></label>}
-                {quote?.topup > 0 ? <Fields payment /> : <label>Payment Method<input value="Gift Card" readOnly /></label>}
-                <div className="priceBox">
-                  <p>Service Price: {quote ? aud(quote.service_price) : "—"}</p>
-                  <p>Gift Card Applied: {quote ? aud(quote.redeemed) : "—"}</p>
-                  <p>Remaining Balance: {aud(quote?.after ?? card.balance)}</p>
-                  <p>Customer Pays: {quote ? aud(quote.topup) : "—"}</p>
-                </div>
-                {quote?.service_value_released > 0 && <>
-                  <p>Unused service gift value: <strong>{aud(quote.service_value_released)}</strong>. The entire gift will be used.</p>
-                  <label><input name="unused_value_confirmed" type="checkbox" value="true" required /> Customer confirmed they accept forfeiting this unused value</label>
-                </>}
-                {quote?.topup > 0 && <label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label>}
-                {card.kind === "legacy" && quote?.after > 0 && <>
-                  <label>Replacement barcode (leave blank to keep the approved legacy card)<input name="replacement" autoComplete="off" onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
-                  <label><input name="old_card_collected" type="checkbox" value="true" /> Old physical card collected for exchange</label>
-                </>}
-                <div className="gift-actions">
-                  <button value="quote" formNoValidate>Calculate gift card payment</button>
-                  <button className="primary" disabled={!quote}>Confirm Checkout</button>
-                </div>
-              </form>
-            </>}
-            {card.kind === "legacy" && card.status === "active" && !card.is_expired && !quote && <>
-              <h4>Replace Old Card</h4>
-              <form className="form" onSubmit={transferBalance}>
-                <label>New physical card barcode<input name="replacement" autoComplete="off" required
-                  onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
-                <label><input name="old_card_collected" type="checkbox" value="true" required /> Old physical card collected</label>
-                <button>Replace Old Card · {aud(card.balance)}</button>
-              </form>
-            </>}
-            {card.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
-          </>}
-        </>}
+          </div>
+          {card?.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
+        </div>}
         {owner && page === "Manage Gift Cards" && <>
+          <div className="gift-actions"><button type="button" onClick={() => selectPage("Unsold Card Stock")}>Add</button></div>
           <form className="form" onSubmit={(e) => submit(e, "manage_lookup", (value) => { setCard(value); setManageAction(""); })}>
             <label>Barcode<input name="barcode" type="search" autoComplete="off" required /></label>
             <button>Find Card</button>

@@ -174,12 +174,16 @@ try {
   assert.equal(await page.getByRole("button", { name: "Reports", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Checkout", exact: true }).click();
   await page.getByRole("button", { name: "Gift Card Checkout", exact: true }).click();
+  await page.getByLabel("Extra Payment Method").waitFor();
+  for (const label of ["Service", "Therapist", "Service Date", "Redeem Amount ($)", "Existing Previous Old Card"]) {
+    assert.equal(await page.getByLabel(label, { exact: true }).isVisible(), true);
+  }
+  assert.equal(await page.getByRole("button", { name: "Confirm Checkout" }).isEnabled(), false);
   await page.getByLabel("Scan Gift Card Barcode", { exact: true }).pressSequentially("0000123");
   await page.getByLabel("Scan Gift Card Barcode", { exact: true }).press("Enter");
   await page.getByText(/0000123 · active/).waitFor();
   await page.locator("select[name=service_code]").selectOption("cheaper");
-  await page.getByRole("button", { name: "Calculate gift card payment" }).click();
-  await page.getByText(/Unused service gift value/).waitFor();
+  await page.getByText(/Customer accepts the unused value/).waitFor();
   assert.equal(await page.getByLabel("Customer", { exact: true }).count(), 0);
   await page.getByLabel("Therapist", { exact: true }).selectOption("Test Therapist");
   await page.getByRole("button", { name: "Confirm Checkout" }).click();
