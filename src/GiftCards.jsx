@@ -55,7 +55,7 @@ const pageLabels = {
 };
 
 const historyLabels = {
-  stock: "Registered", sale: "Sold", redeem: "Used", exchange: "Replaced",
+  stock: "Registered", stock_batch: "Stock registered", sale: "Sold", redeem: "Used", exchange: "Replaced",
   transfer: "Balance transferred", claim: "Old card submitted",
   approve: "Approved", reject: "Declined", adjust: "Balance adjusted",
   correct_card: "Registration corrected", cancel_card: "Cancelled",
@@ -106,7 +106,7 @@ export function SignIn({ client, title }) {
   </section>;
 }
 
-export default function GiftCards({ ownerView, client, userId, members, defaultMember, serviceDate, sellers, onLedgerChange }) {
+export default function GiftCards({ ownerView, client, userId, serviceDate, sellers, onLedgerChange }) {
   const storageKey = `yohome-gift-pending:${userId}`;
   const [request, setRequest] = useState(() => {
     try {
@@ -122,8 +122,9 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
   const [isError, setIsError] = useState(false);
   const [result, setResult] = useState(null);
   const [card, setCard] = useState(null);
-  const [customer, setCustomer] = useState(defaultMember || "guest");
-  const [customerSearch, setCustomerSearch] = useState("");
+  const [missingBarcode, setMissingBarcode] = useState("");
+  const [claimOld, setClaimOld] = useState(false);
+  const [salePayment, setSalePayment] = useState("");
   const [quote, setQuote] = useState(null);
   const [saleType, setSaleType] = useState("dollar");
   const [saleFamily, setSaleFamily] = useState("");
@@ -174,7 +175,10 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
         action_name: action, args, operation_id: operation?.id ?? null,
       });
       if (error) {
-        if (write && status === 400 && /^(22|23|P0001)/.test(error.code ?? "")) saveRequest(null);
+        if (action === "lookup" && page === "Checkout" && error.message === "Card not found") {
+          setMissingBarcode(args.barcode);
+        }
+        if (write && [400, 409].includes(status) && /^(22|23|P0001)/.test(error.code ?? "")) saveRequest(null);
         throw new Error(error.message);
       }
       if (write) {
@@ -197,16 +201,16 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
     const args = Object.fromEntries([...fields].filter(([, value]) => value !== ""));
-    if (args.member_id === "guest") delete args.member_id;
     if (args.unused_value_confirmed === "true") args.unused_value_confirmed = true;
     try {
+      if (args.redeem_amount !== undefined) args.redeem_amount = cents(args.redeem_amount);
       if (args.amount !== undefined) args.amount = cents(args.amount);
     } catch (error) {
       setMessage(error.message);
       setIsError(true);
       return;
     }
-    void run(action, { ...args, ...extras }, onResult, !["lookup", "quote"].includes(action));
+    void run(action, { ...args, ...extras }, onResult, !["lookup", "manage_lookup", "quote"].includes(action));
   }
 
   function transferBalance(event) {
@@ -235,6 +239,9 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
     setSaleService("");
     setSaleValue("");
     setManageAction("");
+    setSalePayment("");
+    setMissingBarcode("");
+    setClaimOld(false);
     setMessage("");
     if (next === "Approvals") void run("pending", {}, setPending);
     if (next === "Reports") void run("report", {}, setReport);
@@ -251,13 +258,8 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
       duration: card.service_duration, active: true,
     }, ...services.filter((s) => s.code !== card.service_code)]
     : services;
-  const activeMembers = members.filter((member) => !member.deleted);
-  const search = customerSearch.trim().toLowerCase();
-  const customerOptions = activeMembers.filter((member) => member.id === customer || !search
-    || [member.full_name, member.phone, member.card_id, member.email]
-      .some((value) => String(value ?? "").toLowerCase().includes(search)));
-  const primaryPages = ["Sales", "Checkout", "Manage Gift Cards"];
-  const tools = owner ? ["Legacy Claim", "Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports"] : ["Legacy Claim"];
+  const primaryPages = owner ? ["Sales", "Checkout", "Manage Gift Cards"] : ["Sales", "Checkout"];
+  const tools = owner ? ["Legacy Claim", "Approvals", "Unsold Card Stock", "Balance Adjustment", "Gift Services", "Reports"] : ["Legacy Claim"];
   const selectedSaleService = saleOptions.find((service) => service.code === saleService);
   const dollarSummary = /^\d{1,7}(\.\d{1,2})?$/.test(saleValue) ? aud(cents(saleValue)) : "—";
 
@@ -287,34 +289,47 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
       <fieldset key={page} disabled={busy} className="gift-fields">
         <h4>{pageLabels[page] ?? page}</h4>
         {page === "Checkout" && <>
-          <div className="form">
-            <label>Search Customer<input className="search" placeholder="Phone / Card ID / Name / Email"
-              value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} /></label>
-            <label>Customer<select value={customer} onChange={(e) => setCustomer(e.target.value)}>
-              <option value="guest">Guest</option>
-              {customerOptions.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.phone || ""} · {m.card_id}</option>)}
-            </select></label>
-          </div>
-          <form className="form" onSubmit={(e) => submit(e, "lookup", (value) => { setCard(value); setQuote(null); setResult(null); })}>
-            <label>Scan Gift Card Barcode<input name="barcode" autoComplete="off" required onKeyDown={(event) => {
+          <form className="form" onSubmit={(e) => {
+            setCard(null);
+            setQuote(null);
+            setResult(null);
+            setMissingBarcode("");
+            setClaimOld(false);
+            submit(e, "lookup", setCard);
+          }}>
+            <label>Scan Gift Card Barcode<input name="barcode" autoComplete="off" required
+              onChange={() => { setCard(null); setQuote(null); setMissingBarcode(""); setClaimOld(false); }}
+              onKeyDown={(event) => {
               if (event.key !== "Enter") return;
               event.preventDefault();
               event.currentTarget.form.requestSubmit();
             }} /></label><button>Find card</button>
           </form>
+          {missingBarcode && <>
+            <label><input type="checkbox" checked={claimOld} onChange={(e) => setClaimOld(e.target.checked)} /> Existing Old Gift Card</label>
+            {claimOld && <form className="form" onSubmit={(e) => submit(e, "claim",
+              () => { setMissingBarcode(""); setClaimOld(false); }, { barcode: missingBarcode })}>
+              <p>Old card: {missingBarcode}</p>
+              <Fields amount="Claimed old card value (AUD)" reason="Evidence or old card details" />
+              <button>Submit for owner approval</button>
+            </form>}
+          </>}
           {card && <>
-            <p>{card.barcode} · {card.is_expired ? "expired" : card.status} · {aud(card.balance)}
+            <p>{card.barcode} · {card.is_expired ? "expired" : card.status === "spent" ? "Fully Redeemed" : card.status} · {aud(card.balance)}
               {card.service_name && ` · ${card.service_name} (${aud(card.service_value)} original value)`}
               {card.expires_on && ` · Expires ${card.expires_on}`}</p>
             {card.status === "active" && !card.is_expired && <>
               <form key={card.barcode} className="form" onSubmit={(e) => submit(e, "quote", setQuote, { barcode: card.barcode })}>
                 <ServiceSelect services={cardServices} onChange={() => setQuote(null)} />
+                {card.kind === "dollar" && <label>Redeem Amount (AUD)
+                  <input name="redeem_amount" inputMode="decimal" placeholder="Leave blank to apply available balance" onChange={() => setQuote(null)} />
+                </label>}
                 <button>Calculate gift card payment</button>
               </form>
               {quote && <form key={JSON.stringify(quote)} className="form" onSubmit={(e) => {
                 const exchange = Boolean(new FormData(e.currentTarget).get("replacement"));
                 submit(e, exchange ? "exchange" : "redeem", () => { setCard(null); setQuote(null); },
-                  { barcode: card.barcode, service_code: quote.service_code, quote, ...(customer !== "guest" && { member_id: customer }) });
+                  { barcode: card.barcode, service_code: quote.service_code, quote, ...(card.kind === "dollar" && { redeem_amount: quote.redeemed }) });
               }}>
                 <label>Therapist<select name="therapist" required>
                   <option value="">Select</option>
@@ -352,8 +367,8 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
             {card.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
           </>}
         </>}
-        {page === "Manage Gift Cards" && <>
-          <form className="form" onSubmit={(e) => submit(e, "lookup", (value) => { setCard(value); setManageAction(""); })}>
+        {owner && page === "Manage Gift Cards" && <>
+          <form className="form" onSubmit={(e) => submit(e, "manage_lookup", (value) => { setCard(value); setManageAction(""); })}>
             <label>Barcode<input name="barcode" type="search" autoComplete="off" required /></label>
             <button>Find Card</button>
           </form>
@@ -390,7 +405,24 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
             {card.history.length ? <History entries={card.history} /> : <p>No activity yet.</p>}
           </div>}
         </>}
-        {page === "Sales" && <form className="form" onSubmit={(e) => submit(e, "sale")}>
+        {page === "Sales" && (salePayment === "transfer" ? <>
+          <label>Payment Method<select value={salePayment} onChange={(e) => { setSalePayment(e.target.value); setCard(null); }}>
+            <option value="">Back to card sale</option>
+            <option value="transfer">Existing Old Card / Balance Transfer</option>
+          </select></label>
+          <form className="form" onSubmit={(e) => { setCard(null); submit(e, "lookup", setCard); }}>
+            <label>Scan Old Card Barcode<input name="barcode" autoComplete="off" required /></label>
+            <button>Find Old Card</button>
+          </form>
+          {card && (card.kind === "legacy" && card.status === "active" && !card.is_expired ?
+            <form className="form" onSubmit={transferBalance}>
+              <p>{card.barcode} · {aud(card.balance)} · Expires {card.expires_on}</p>
+              <label>Scan New Card Barcode<input name="replacement" autoComplete="off" required
+                onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
+              <label><input name="old_card_collected" type="checkbox" value="true" required /> Old physical card collected</label>
+              <button className="primary">Transfer Balance</button>
+            </form> : <p>Scan an approved, active old card to transfer its balance.</p>)}
+        </> : <form className="form" onSubmit={(e) => submit(e, "sale")}>
           <Fields barcode />
           <label>Gift Card Type<select value={saleType} onChange={(e) => {
             setSaleType(e.target.value);
@@ -417,14 +449,18 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
           </> : <label>Dollar Value (AUD)<input name="amount" inputMode="decimal" required
             value={saleValue} onChange={(e) => setSaleValue(e.target.value)} /></label>}
           <label>Sold By<input value={overview.name} readOnly /></label>
-          <Fields payment />
+          <label>Payment Method<select name="payment" required value={salePayment} onChange={(e) => setSalePayment(e.target.value)}>
+            <option value="">Select</option>
+            {payments.map((payment) => <option key={payment}>{payment}</option>)}
+            <option value="transfer">Existing Old Card / Balance Transfer</option>
+          </select></label>
           <Fields expiry />
           <div className="priceBox gift-summary">
             <strong>Summary</strong>
             <span>{saleType === "service" ? selectedSaleService ? serviceLabel(selectedSaleService) : "Select a service" : dollarSummary}</span>
           </div>
           <button className="primary">Confirm Sale</button>
-        </form>}
+        </form>)}
         {page === "Legacy Claim" && <form className="form" onSubmit={(e) => submit(e, "claim")}>
           <Fields barcode amount="Claimed old card value (AUD)" reason="Evidence or old card details" />
           <button>Submit for owner approval</button>
@@ -439,11 +475,18 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
             <p>{item.barcode} · Claimed {aud(item.claim.claimed)} · {item.claim.actor_name}</p>
             <p>{item.claim.reason}</p>
             <Fields amount="Approved balance (AUD)" expiry reason="Review reason" />
+            <label><input name="physical_card_verified" type="checkbox" value="true" required /> Physical old card verified</label>
             <div className="gift-actions"><button value="approve">Approve</button><button value="reject" formNoValidate>Reject</button></div>
           </form>)}
         </>}
-        {page === "Card Stock" && <form className="form" onSubmit={(e) => submit(e, "stock", () => e.target.reset())}>
-          <Fields barcode /><button>Register unused physical card</button>
+        {page === "Unsold Card Stock" && <form className="form" onSubmit={(e) => {
+          e.preventDefault();
+          const form = e.currentTarget;
+          const barcodes = new FormData(form).get("barcodes").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+          void run("stock_batch", { barcodes }, () => form.reset(), true);
+        }}>
+          <label>Barcodes (one per line)<textarea name="barcodes" required /></label>
+          <button>Register Unsold Cards</button>
         </form>}
         {page === "Balance Adjustment" && <form className="form" onSubmit={(e) => submit(e, "adjust")}>
           <p>For unused service gifts, enter zero to void the gift. Its original service value is fixed.</p>
@@ -463,7 +506,9 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
     </>}
     {message && <p role={isError ? "alert" : "status"}>{message}</p>}
     {!isError && result && <p>{result.barcode || result.service_code}
+      {result.stock_count !== undefined && `${result.stock_count} cards registered`}
       {result.after !== undefined && ` · Balance ${aud(result.after)}`}
+      {result.redeemed > 0 && result.after === 0 && !result.replacement && " · Fully Redeemed"}
       {result.replacement && ` · ${aud(result.transferred)} transferred to ${result.replacement}`}
     </p>}
   </section>;

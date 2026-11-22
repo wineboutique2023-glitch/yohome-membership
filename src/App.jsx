@@ -191,7 +191,6 @@ function CRM({ role, userId }) {
   const [viewMode, setViewMode] = useState(role);
   const isOwner = role === "owner" && viewMode === "owner";
   const [receipts, setReceipts] = useState(null);
-  const [giftMember, setGiftMember] = useState("guest");
 
   const [members, setMembers] = useState([]);
   const [checkouts, setCheckouts] = useState([]);
@@ -1165,7 +1164,7 @@ function CRM({ role, userId }) {
           <div className="grid-two">
             <section className="panel">
               <h3>Service Checkout</h3>
-              {giftEnabled && <button type="button" onClick={() => { setGiftMember(checkoutForm.member_id); setTab("gift cards"); }}>Gift Card Checkout</button>}
+              {giftEnabled && <button type="button" onClick={() => { setTab("gift cards"); }}>Gift Card Checkout</button>}
               <label>Search Member</label>
               <input className="search" placeholder="Phone / Card ID / Name / Email" value={checkoutSearch} onChange={(e) => setCheckoutSearch(e.target.value)} />
               {checkoutSearchResults.length > 0 && (
@@ -1245,7 +1244,7 @@ function CRM({ role, userId }) {
           </div>
         )}
 
-        {tab === "gift cards" && giftEnabled && <GiftCards ownerView={isOwner} client={supabase} userId={userId} members={members} defaultMember={giftMember} serviceDate={todayDateInput()} sellers={sellers} onLedgerChange={loadData} />}
+        {tab === "gift cards" && giftEnabled && <GiftCards ownerView={isOwner} client={supabase} userId={userId} serviceDate={todayDateInput()} sellers={sellers} onLedgerChange={loadData} />}
 
         {tab === "services" && isOwner && (
           <div className="grid-two">

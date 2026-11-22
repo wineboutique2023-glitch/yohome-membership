@@ -102,7 +102,7 @@ try {
     .replace("nullif(current_setting('request.jwt.claim.sub',true),'')::uuid", "(auth.jwt()->>'sub')::uuid")
     .replace(/(create or replace function auth.uid\(\)[\s\S]*?\$\$;\n)(create or replace function auth.jwt\(\)[\s\S]*?\$\$;\n)/, "$2$1");
   await admin.query(sql);
-  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql", "20261121030000_receipt_status_server_only.sql", "20261122000000_gift_crm_service_catalog.sql", "20261122010000_gift_card_management.sql"]) {
+  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql", "20261121030000_receipt_status_server_only.sql", "20261122000000_gift_crm_service_catalog.sql", "20261122010000_gift_card_management.sql", "20261122020000_gift_card_workflow.sql"]) {
     await admin.query(await readFile(new URL(`../../supabase/migrations/${migration}`, import.meta.url), "utf8"));
   }
   await admin.query(`create role authenticator login noinherit password '${restPassword}';
@@ -180,7 +180,7 @@ try {
   await page.locator("select[name=service_code]").selectOption("cheaper");
   await page.getByRole("button", { name: "Calculate gift card payment" }).click();
   await page.getByText(/Unused service gift value/).waitFor();
-  await page.getByLabel("Customer", { exact: true }).selectOption(snapshot.members[0].id);
+  assert.equal(await page.getByLabel("Customer", { exact: true }).count(), 0);
   await page.getByLabel("Therapist", { exact: true }).selectOption("Test Therapist");
   await page.getByRole("button", { name: "Confirm Checkout" }).click();
   assert.equal((await rpc(owner.access_token, "receipts")).checkouts, 0);
@@ -189,7 +189,7 @@ try {
   await page.getByText("Saved.", { exact: true }).waitFor();
   const ownerSnapshot = await rpc(owner.access_token, "snapshot");
   assert.equal(ownerSnapshot.checkouts.length, 1);
-  assert.equal(ownerSnapshot.checkouts[0].member_id, snapshot.members[0].id);
+  assert.equal(ownerSnapshot.checkouts[0].member_id, null);
   assert.equal(ownerSnapshot.checkouts[0].gift_unused_value, 40);
   assert.equal((await rpc(owner.access_token, "receipts")).total, 100);
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -203,12 +203,12 @@ try {
   await page.getByRole("button", { name: "Reports", exact: true }).click();
   await page.getByRole("heading", { name: "Reports & Backup" }).waitFor();
   await page.getByText("Total Receipts", { exact: true }).waitFor();
-  assert.match(await page.locator(".checkoutTable").innerText(), /Scanner Test Member[\s\S]*Gift \$60.00 · Paid \$0.00/);
+  assert.match(await page.locator(".checkoutTable").innerText(), /Guest[\s\S]*Gift \$60.00 · Paid \$0.00/);
   await page.getByRole("button", { name: "Members", exact: true }).click();
   await page.getByRole("button", { name: "View Profile", exact: true }).click();
   await page.getByRole("heading", { name: "Treatment History", exact: true }).waitFor();
   await page.getByText("Total Spent", { exact: true }).waitFor();
-  assert.match(await page.locator(".historyPanel").innerText(), /Cheaper gift service[\s\S]*Gift \$60.00 · Paid \$0.00/);
+  assert.doesNotMatch(await page.locator(".historyPanel").innerText(), /Cheaper gift service/);
   await page.locator(".modeBox select").selectOption("staff");
   await page.getByText("Total Members", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Reports", exact: true }).count(), 0);

@@ -34,6 +34,7 @@ before(async () => {
   await db.exec(await sql("../supabase/migrations/20261121030000_receipt_status_server_only.sql"));
   await db.exec(await sql("../supabase/migrations/20261122000000_gift_crm_service_catalog.sql"));
   await db.exec(await sql("../supabase/migrations/20261122010000_gift_card_management.sql"));
+  await db.exec(await sql("../supabase/migrations/20261122020000_gift_card_workflow.sql"));
 });
 after(() => db.close());
 
@@ -136,7 +137,7 @@ test("cheaper service requires explicit confirmation and legacy exchange keeps i
   const replacement = "00099";
   await gift(staff, "claim", { barcode, amount: 10000, reason: "Old physical card" });
   await assert.rejects(gift(staff, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Attempt" }), /Owner access/);
-  await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked evidence" });
+  await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked evidence", physical_card_verified: true });
   await gift(owner, "stock", { barcode: replacement });
   const exchange = { barcode, service_code: "cheaper", replacement, old_card_collected: true, member_id: member };
   const before = await crm(owner, "receipts");
@@ -175,7 +176,7 @@ test("release: receipt status is server-managed and a $100 legacy card exchanges
   const barcode = "RELEASE-100";
   await gift(staff, "claim", { barcode, amount: 10000, reason: "Synthetic old card" });
   await assert.rejects(gift(staff, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Attempt" }), /Owner access/);
-  await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked" });
+  await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked", physical_card_verified: true });
   await gift(owner, "stock", { barcode: replacement });
   const draft = { barcode, replacement, old_card_collected: true, member_id: member, service_code: "release-50" };
   const args = { ...draft, quote: await gift(staff, "quote", draft) };
@@ -225,4 +226,60 @@ test("gift checkout records the selected service date and validates therapist", 
   const row = (await crm(owner, "snapshot")).checkouts.find((entry) => entry.gift_request_id === operation);
   assert.equal(row.created_at.slice(0, 19), "2026-11-19T12:00:00");
   assert.equal(row.therapist, "Gift Test Therapist");
+});
+
+test("anonymous checkout applies a specified dollar amount and settles only once", async () => {
+  const barcode = "FLOW-DOLLAR";
+  await gift(owner, "stock", { barcode });
+  await gift(staff, "sale", { barcode, amount: 10000, expires_on: expiry, payment: "Cash" });
+  const args = { barcode, service_code: "cheaper", redeem_amount: 2500 };
+  await assert.rejects(gift(staff, "quote", { ...args, redeem_amount: 6500 }), /Redeem amount/);
+  const quote = await gift(staff, "quote", args);
+  assert.deepEqual([quote.redeemed, quote.topup, quote.after], [2500, 3500, 7500]);
+  const before = await crm(owner, "receipts");
+  const request = { ...args, quote, payment: "Tyro", payment_confirmed: true };
+  const reference = randomUUID();
+  const result = await gift(staff, "redeem", request, reference);
+  assert.deepEqual(await gift(staff, "redeem", request, reference), result);
+  await assert.rejects(gift(staff, "redeem", request), /Price or balance changed/);
+  const row = (await crm(owner, "snapshot")).checkouts.find((entry) => entry.gift_request_id === reference);
+  assert.deepEqual([row.member_id, row.customer_type, row.cash_received], [null, "guest", 35]);
+  assert.equal((await crm(owner, "receipts")).total - before.total, 35);
+  const finalArgs = { barcode, service_code: "original", redeem_amount: 7500 };
+  await gift(staff, "redeem", { ...finalArgs, quote: await gift(staff, "quote", finalArgs),
+    payment: "Cash", payment_confirmed: true });
+  assert.equal((await gift(staff, "lookup", { barcode })).status, "spent");
+});
+
+test("verified old card transfer and owner stock registration are atomic", async () => {
+  const barcode = "FLOW-OLD";
+  const replacement = "FLOW-NEW";
+  const barcodes = [replacement, "FLOW-NEW-2"];
+  await assert.rejects(gift(staff, "stock_batch", { barcodes }), /Owner access/);
+  const batch = randomUUID();
+  assert.equal((await gift(owner, "stock_batch", { barcodes }, batch)).stock_count, 2);
+  assert.equal((await gift(owner, "stock_batch", { barcodes }, batch)).stock_count, 2);
+  await assert.rejects(gift(owner, "stock_batch", { barcodes: [replacement, "FLOW-ROLLBACK"] }), /already registered/);
+  await assert.rejects(gift(owner, "lookup", { barcode: "FLOW-ROLLBACK" }), /Card not found/);
+  await assert.rejects(gift(staff, "manage_lookup", { barcode: replacement }), /Owner access/);
+  assert.ok((await gift(owner, "manage_lookup", { barcode: replacement })).history.some((entry) => entry.action === "stock_batch"));
+  await assert.rejects(gift(staff, "claim", { barcode: replacement, amount: 1234, reason: "Old" }), /duplicate/);
+  await assert.rejects(gift(staff, "quote", { barcode: replacement, service_code: "original" }), /active unexpired/);
+  await gift(staff, "claim", { barcode, amount: 1234, reason: "Old card supplied" });
+  await assert.rejects(gift(staff, "quote", { barcode, service_code: "original" }), /active unexpired/);
+  const approve = { barcode, amount: 1234, expires_on: expiry, reason: "Checked old card" };
+  await assert.rejects(gift(owner, "approve", approve), /Verify the physical/);
+  await gift(owner, "approve", { ...approve, physical_card_verified: true });
+  const before = (await crm(owner, "receipts")).total;
+  const transfer = { barcode, replacement, amount: 1234, old_card_collected: true };
+  await assert.rejects(gift(staff, "transfer", { ...transfer, amount: 1235 }), /Balance changed/);
+  await assert.rejects(gift(staff, "transfer", { ...transfer, old_card_collected: false }), /Collect/);
+  const id = randomUUID();
+  const result = await gift(staff, "transfer", transfer, id);
+  assert.deepEqual(await gift(staff, "transfer", transfer, id), result);
+  await assert.rejects(gift(staff, "transfer", transfer), /Collect/);
+  const newCard = await gift(staff, "lookup", { barcode: replacement });
+  assert.deepEqual([newCard.balance, newCard.expires_on, newCard.status], [1234, expiry, "active"]);
+  assert.equal((await gift(staff, "lookup", { barcode })).status, "exchanged");
+  assert.equal((await crm(owner, "receipts")).total, before);
 });
