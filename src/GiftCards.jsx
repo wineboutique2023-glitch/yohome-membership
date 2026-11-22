@@ -24,10 +24,23 @@ function Fields({ barcode = false, amount = false, expiry = false, reason = fals
   </>;
 }
 
-function ServiceSelect({ services, optional = false, onChange }) {
-  return <label>Service<select name="service_code" required={!optional} onChange={onChange}>
-    <option value="">{optional ? "Dollar Value" : "Select service"}</option>
-    {services.filter((s) => s.active).map((s) => <option key={s.code} value={s.code}>{s.name} · {aud(s.price)}</option>)}
+function serviceFamily(name) {
+  if (/deep tissue/i.test(name)) return "Deep Tissue Massage";
+  if (/remedial|injury recovery/i.test(name)) return "Remedial Massage";
+  if (/myotherapy/i.test(name)) return "Myotherapy";
+  return name;
+}
+
+function serviceLabel(service) {
+  const minutes = Math.round(Number(service.duration) * 60);
+  const duration = minutes && !/\d+\s*min\b/i.test(service.name) ? ` · ${minutes} min` : "";
+  return `${service.name}${duration} · ${aud(service.price)}`;
+}
+
+function ServiceSelect({ services, onChange }) {
+  return <label>Service<select name="service_code" required onChange={onChange}>
+    <option value="">Select service</option>
+    {services.filter((s) => s.active).map((s) => <option key={s.code} value={s.code}>{serviceLabel(s)}</option>)}
   </select></label>;
 }
 
@@ -74,7 +87,7 @@ export function SignIn({ client, title }) {
   </section>;
 }
 
-export default function GiftCards({ ownerView, client, userId, members, defaultMember, sellers, crmServices, onLedgerChange }) {
+export default function GiftCards({ ownerView, client, userId, members, defaultMember, sellers, onLedgerChange }) {
   const storageKey = `yohome-gift-pending:${userId}`;
   const [request, setRequest] = useState(() => {
     try {
@@ -91,7 +104,7 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
   const [result, setResult] = useState(null);
   const [card, setCard] = useState(null);
   const [quote, setQuote] = useState(null);
-  const [serviceGift, setServiceGift] = useState(false);
+  const [saleFamily, setSaleFamily] = useState("");
   const [pending, setPending] = useState(null);
   const [report, setReport] = useState(null);
   const running = useRef(false);
@@ -192,7 +205,7 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
     setCard(null);
     setQuote(null);
     setResult(null);
-    setServiceGift(false);
+    setSaleFamily("");
     setMessage("");
     if (next === "Approvals") void run("pending", {}, setPending);
     if (next === "Reports") void run("report", {}, setReport);
@@ -200,10 +213,14 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
 
   const owner = ownerView && overview?.role === "owner";
   const services = overview?.services ?? [];
-  const cardServices = card?.kind === "service" && !services.some((s) => s.code === card.service_code && s.active)
-    ? [...services.filter((s) => s.code !== card.service_code), {
-      code: card.service_code, name: card.service_name, price: card.service_value, active: true,
-    }]
+  const saleFamilies = [...new Set(services.map((service) => serviceFamily(service.name)))];
+  const saleOptions = services.filter((service) => serviceFamily(service.name) === saleFamily)
+    .sort((a, b) => Number(a.duration) - Number(b.duration));
+  const cardServices = card?.kind === "service"
+    ? [{
+      code: card.service_code, name: card.service_name, price: card.service_value,
+      duration: card.service_duration, active: true,
+    }, ...services.filter((s) => s.code !== card.service_code)]
     : services;
   const pages = ["Checkout", "Sales", "Legacy Claim"];
   if (owner) pages.push("Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports");
@@ -283,8 +300,15 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
         </>}
         {page === "Sales" && <form className="form" onSubmit={(e) => submit(e, "sale")}>
           <Fields barcode />
-          <ServiceSelect services={services} optional onChange={(e) => setServiceGift(Boolean(e.target.value))} />
-          <Fields amount={!serviceGift && "Card value (AUD)"} expiry payment />
+          <label>Gift type / service<select value={saleFamily} onChange={(e) => setSaleFamily(e.target.value)}>
+            <option value="">Dollar Value</option>
+            {saleFamilies.map((family) => <option key={family}>{family}</option>)}
+          </select></label>
+          {saleFamily && <label>Duration<select key={saleFamily} name="service_code" required>
+            <option value="">Select duration</option>
+            {saleOptions.map((service) => <option key={service.code} value={service.code}>{serviceLabel(service)}</option>)}
+          </select></label>}
+          <Fields amount={!saleFamily && "Card value (AUD)"} expiry payment />
           <button>Record gift card sale</button>
         </form>}
         {page === "Legacy Claim" && <form className="form" onSubmit={(e) => submit(e, "claim")}>
@@ -312,23 +336,9 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
           <Fields barcode amount="New balance (AUD)" reason /><button>Save audited adjustment</button>
         </form>}
         {page === "Gift Services" && <>
-          <p>Service gifts use these owner-managed prices.</p>
-          {services.length > 0 && <ul>{services.map((s) => <li key={s.code}>{s.code} · {s.name} · {aud(s.price)}{!s.active && " · inactive"}</li>)}</ul>}
-          <form className="form" onSubmit={(e) => submit(e, "set_service", (data) => {
-            setOverview((current) => ({ ...current, services: [
-              ...current.services.filter((s) => s.code !== data.service_code),
-              { code: data.service_code, name: data.name, price: data.price, active: data.active },
-            ] }));
-          })}>
-            <label>CRM service<select name="service_code" required>
-              <option value="">Select</option>
-              {crmServices.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.id}</option>)}
-            </select></label>
-            <label>Service name<input name="name" required /></label>
-            <Fields amount="Service price (AUD)" />
-            <label>Status<select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></label>
-            <button>Save gift service</button>
-          </form>
+          <p>Manage service names, durations and standard prices in CRM Services.</p>
+          {services.length > 0 && <ul>{services.map((service) =>
+            <li key={service.code}>{serviceLabel(service)}</li>)}</ul>}
         </>}
         {page === "Reports" && <>
           <button onClick={() => void run("report", {}, setReport)}>Refresh report</button>

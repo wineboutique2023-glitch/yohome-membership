@@ -32,6 +32,7 @@ before(async () => {
   await db.exec(await sql("../supabase/migrations/20261121010000_crm_auth_gift_checkout.sql"));
   await db.exec(await sql("../supabase/migrations/20261121020000_preserve_legacy_crm_behaviour.sql"));
   await db.exec(await sql("../supabase/migrations/20261121030000_receipt_status_server_only.sql"));
+  await db.exec(await sql("../supabase/migrations/20261122000000_gift_crm_service_catalog.sql"));
 });
 after(() => db.close());
 
@@ -51,15 +52,9 @@ async function gift(user, action, args = {}, id = randomUUID()) {
   return (await as(user, "select public.membership_gift_card($1,$2,$3) as result", [action, args, id]))[0].result;
 }
 
-async function registerGiftServices() {
-  for (const [service_code, amount] of [["original", 10000], ["upgrade", 14000], ["cheaper", 6000]]) {
-    await gift(owner, "set_service", { service_code, name: service_code, amount });
-  }
-}
-
 async function sell(barcode) {
   await gift(owner, "stock", { barcode });
-  await gift(staff, "sale", { barcode, service_code: "original", expires_on: expiry, payment: "Tyro" });
+  await gift(staff, "sale", { barcode, service_code: "original", expires_on: expiry, payment: "Tyro", amount: 1 });
 }
 
 test("roles enforce permissions and preserve existing data", async () => {
@@ -98,10 +93,16 @@ test("staff enrols and renews members and checkout validates live prices", async
 });
 
 test("upgrade creates one member checkout and recognizes the sale and cash top-up once", async () => {
-  await registerGiftServices();
   const before = await crm(owner, "receipts");
   await sell("00UP");
-  await gift(owner, "set_service", { service_code: "original", name: "Changed", amount: 12000 });
+  await assert.rejects(gift(owner, "set_service", { service_code: "original", name: "Changed", amount: 12000 }), /CRM Services/);
+  await as(owner, "update public.service_items set name='Changed', normal_price=120, duration=1.5 where id='original'");
+  const catalog = (await gift(staff, "overview")).services;
+  assert.deepEqual(catalog.find((service) => service.code === "original"),
+    { code: "original", name: "Changed", price: 12000, duration: 1.5, active: true });
+  const originalQuote = await gift(staff, "quote", { barcode: "00UP", service_code: "original" });
+  assert.deepEqual([originalQuote.service_name, originalQuote.service_duration, originalQuote.service_price], ["Original", 1, 10000]);
+  await as(owner, "update public.service_items set name='Original', normal_price=100, duration=1 where id='original'");
   const args = { barcode: "00UP", service_code: "upgrade" };
   const quote = await gift(staff, "quote", args);
   assert.equal(quote.topup, 4000);
@@ -126,10 +127,10 @@ test("cheaper service requires explicit confirmation and legacy exchange keeps i
   await sell("00LESS");
   const args = { barcode: "00LESS", service_code: "cheaper" };
   const quote = await gift(staff, "quote", args);
-  assert.equal(quote.service_value_released, 6000);
+  assert.equal(quote.service_value_released, 4000);
   await assert.rejects(gift(staff, "redeem", { ...args, quote, unused_value_confirmed: "true" }), /Customer confirmation/);
   await gift(staff, "redeem", { ...args, quote, unused_value_confirmed: true, member_id: member });
-  assert.ok((await crm(owner, "snapshot")).checkouts.some((r) => r.gift_unused_value === 60 && r.cash_received === 0));
+  assert.ok((await crm(owner, "snapshot")).checkouts.some((r) => r.gift_unused_value === 40 && r.cash_received === 0));
   const barcode = "OLD2";
   const replacement = "00099";
   await gift(staff, "claim", { barcode, amount: 10000, reason: "Old physical card" });
@@ -169,7 +170,6 @@ test("release: receipt status is server-managed and a $100 legacy card exchanges
   await assert.rejects(crm(staff, "mark_receipt", { member_id: member }), /server-managed/);
   await assert.rejects(as(owner, "update public.members set receipt_sent=true where id=$1", [member]), /server-managed/);
   await db.exec("insert into public.service_items(id,name,normal_price) values ('release-50','Release 50',50)");
-  await gift(owner, "set_service", { service_code: "release-50", name: "Release 50", amount: 5000 });
   const replacement = "00000050";
   const barcode = "RELEASE-100";
   await gift(staff, "claim", { barcode, amount: 10000, reason: "Synthetic old card" });
