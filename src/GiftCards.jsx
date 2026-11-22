@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import "./GiftCards.css";
 
 const payments = ["Cash", "Tyro", "Stripe", "Bank Transfer", "Other"];
 const aud = (cents) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(Number(cents ?? 0) / 100);
@@ -25,8 +26,8 @@ function Fields({ barcode = false, amount = false, expiry = false, reason = fals
 }
 
 function serviceFamily(name) {
-  if (/deep tissue/i.test(name)) return "Deep Tissue Massage";
-  if (/remedial|injury recovery/i.test(name)) return "Remedial Massage";
+  if (/deep tissue/i.test(name)) return "Deep Tissue";
+  if (/remedial|injury recovery/i.test(name)) return "Remedial";
   if (/myotherapy/i.test(name)) return "Myotherapy";
   return name;
 }
@@ -45,8 +46,9 @@ function ServiceSelect({ services, onChange }) {
 }
 
 const pageLabels = {
-  Checkout: "Use Gift Card",
-  Sales: "Sell Gift Card",
+  Checkout: "Use Card",
+  Sales: "Sell Card",
+  "Manage Gift Cards": "Manage Cards",
   "Legacy Claim": "Old Gift Card",
   Approvals: "Approve Old Cards",
   "Gift Services": "Gift Card Services",
@@ -123,7 +125,11 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
   const [customer, setCustomer] = useState(defaultMember || "guest");
   const [customerSearch, setCustomerSearch] = useState("");
   const [quote, setQuote] = useState(null);
+  const [saleType, setSaleType] = useState("dollar");
   const [saleFamily, setSaleFamily] = useState("");
+  const [saleService, setSaleService] = useState("");
+  const [saleValue, setSaleValue] = useState("");
+  const [manageAction, setManageAction] = useState("");
   const [pending, setPending] = useState(null);
   const [report, setReport] = useState(null);
   const running = useRef(false);
@@ -224,7 +230,11 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
     setCard(null);
     setQuote(null);
     setResult(null);
+    setSaleType("dollar");
     setSaleFamily("");
+    setSaleService("");
+    setSaleValue("");
+    setManageAction("");
     setMessage("");
     if (next === "Approvals") void run("pending", {}, setPending);
     if (next === "Reports") void run("report", {}, setReport);
@@ -246,10 +256,12 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
   const customerOptions = activeMembers.filter((member) => member.id === customer || !search
     || [member.full_name, member.phone, member.card_id, member.email]
       .some((value) => String(value ?? "").toLowerCase().includes(search)));
-  const pages = ["Checkout", "Sales", "Legacy Claim"];
-  if (owner) pages.push("Manage Gift Cards", "Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports");
+  const primaryPages = ["Sales", "Checkout", "Manage Gift Cards"];
+  const tools = owner ? ["Legacy Claim", "Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports"] : ["Legacy Claim"];
+  const selectedSaleService = saleOptions.find((service) => service.code === saleService);
+  const dollarSummary = /^\d{1,7}(\.\d{1,2})?$/.test(saleValue) ? aud(cents(saleValue)) : "—";
 
-  return <section className="panel gift-panel">
+  return <section className="panel gift-panel gift-workspace">
     <h3>Gift Cards</h3>
     {request && <div className="gift-actions">
       <p>A saved {request.action} submission is awaiting a result.</p>
@@ -262,11 +274,18 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
       }, true)}>Recover transaction result</button>
     </div>}
     {overview && <>
-      <p>Signed in as {overview.name}</p>
-      <nav className="gift-actions" aria-label="Gift card functions">{pages.map((name) =>
-        <button type="button" key={name} disabled={busy} aria-pressed={page === name} onClick={() => selectPage(name)}>{pageLabels[name] ?? name}</button>
+      <nav className="gift-primary" aria-label="Gift card functions">{primaryPages.map((name) =>
+        <button type="button" key={name} disabled={busy} aria-pressed={page === name} onClick={() => selectPage(name)}>{pageLabels[name]}</button>
       )}</nav>
+      <details className="gift-tools">
+        <summary>{owner ? "Owner Tools" : "More"}</summary>
+        <div className="gift-actions">{tools.map((name) =>
+          <button type="button" key={name} disabled={busy} aria-pressed={page === name}
+            onClick={() => selectPage(name)}>{pageLabels[name] ?? name}</button>
+        )}</div>
+      </details>
       <fieldset key={page} disabled={busy} className="gift-fields">
+        <h4>{pageLabels[page] ?? page}</h4>
         {page === "Checkout" && <>
           <div className="form">
             <label>Search Customer<input className="search" placeholder="Phone / Card ID / Name / Email"
@@ -318,7 +337,7 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
                   <label>Replacement barcode (leave blank to keep the approved legacy card)<input name="replacement" autoComplete="off" onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
                   <label><input name="old_card_collected" type="checkbox" value="true" /> Old physical card collected for exchange</label>
                 </>}
-                <button>Confirm Checkout</button>
+                <button className="primary">Confirm Checkout</button>
               </form>}
             </>}
             {card.kind === "legacy" && card.status === "active" && !card.is_expired && !quote && <>
@@ -333,19 +352,25 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
             {card.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
           </>}
         </>}
-        {owner && page === "Manage Gift Cards" && <>
-          <form className="form" onSubmit={(e) => submit(e, "lookup", setCard)}>
+        {page === "Manage Gift Cards" && <>
+          <form className="form" onSubmit={(e) => submit(e, "lookup", (value) => { setCard(value); setManageAction(""); })}>
             <label>Barcode<input name="barcode" type="search" autoComplete="off" required /></label>
             <button>Find Card</button>
           </form>
-          {card && <div key={card.barcode}>
+          {card && <div className="gift-card-detail" key={card.barcode}>
             <h4>{card.barcode}</h4>
             <p>{card.kind} · {card.status}{card.is_expired && " · expired"} · {aud(card.balance)}
               {card.expires_on && ` · Expires ${card.expires_on}`}</p>
             {card.service_name && <p>{serviceLabel({
               name: card.service_name, duration: card.service_duration, price: card.service_value,
             })}</p>}
-            <form className="form" onSubmit={(e) => {
+            {owner && <div className="gift-actions">
+              <button type="button" aria-expanded={manageAction === "edit"}
+                onClick={() => setManageAction(manageAction === "edit" ? "" : "edit")}>Edit</button>
+              {card.can_cancel && <button type="button" className="danger" aria-expanded={manageAction === "cancel"}
+                onClick={() => setManageAction(manageAction === "cancel" ? "" : "cancel")}>Cancel</button>}
+            </div>}
+            {owner && manageAction === "edit" && <form className="form" onSubmit={(e) => {
               const note = new FormData(e.currentTarget).get("registration_note");
               submit(e, "correct_card", () => setCard(null),
                 { barcode: card.barcode, registration_note: note });
@@ -353,8 +378,8 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
               <label>Registration Note<textarea name="registration_note" defaultValue={card.registration_note ?? ""} maxLength={1000} /></label>
               <Fields reason="Reason for correction" />
               <button>Save Correction</button>
-            </form>
-            {card.can_cancel && <form className="form" onSubmit={(e) =>
+            </form>}
+            {owner && card.can_cancel && manageAction === "cancel" && <form className="form" onSubmit={(e) =>
               submit(e, "cancel_card", () => setCard(null), { barcode: card.barcode })}>
               <p>Cancelling stops future use. Any payment already recorded stays in the reports.</p>
               <Fields reason="Reason for cancellation" />
@@ -367,16 +392,38 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
         </>}
         {page === "Sales" && <form className="form" onSubmit={(e) => submit(e, "sale")}>
           <Fields barcode />
-          <label>Gift type / service<select value={saleFamily} onChange={(e) => setSaleFamily(e.target.value)}>
-            <option value="">Dollar Value</option>
-            {saleFamilies.map((family) => <option key={family}>{family}</option>)}
+          <label>Gift Card Type<select value={saleType} onChange={(e) => {
+            setSaleType(e.target.value);
+            setSaleFamily("");
+            setSaleService("");
+            setSaleValue("");
+          }}>
+            <option value="dollar">Dollar Value</option>
+            <option value="service">Service Gift</option>
           </select></label>
-          {saleFamily && <label>Duration<select key={saleFamily} name="service_code" required>
-            <option value="">Select duration</option>
-            {saleOptions.map((service) => <option key={service.code} value={service.code}>{serviceLabel(service)}</option>)}
-          </select></label>}
-          <Fields amount={!saleFamily && "Card value (AUD)"} expiry payment />
-          <button>Record gift card sale</button>
+          {saleType === "service" ? <>
+            <label>Service Category<select value={saleFamily} required onChange={(e) => {
+              setSaleFamily(e.target.value);
+              setSaleService("");
+            }}>
+              <option value="">Select category</option>
+              {saleFamilies.map((family) => <option key={family}>{family}</option>)}
+            </select></label>
+            <label>Duration<select name="service_code" value={saleService} required disabled={!saleFamily}
+              onChange={(e) => setSaleService(e.target.value)}>
+              <option value="">Select duration</option>
+              {saleOptions.map((service) => <option key={service.code} value={service.code}>{serviceLabel(service)}</option>)}
+            </select></label>
+          </> : <label>Dollar Value (AUD)<input name="amount" inputMode="decimal" required
+            value={saleValue} onChange={(e) => setSaleValue(e.target.value)} /></label>}
+          <label>Sold By<input value={overview.name} readOnly /></label>
+          <Fields payment />
+          <Fields expiry />
+          <div className="priceBox gift-summary">
+            <strong>Summary</strong>
+            <span>{saleType === "service" ? selectedSaleService ? serviceLabel(selectedSaleService) : "Select a service" : dollarSummary}</span>
+          </div>
+          <button className="primary">Confirm Sale</button>
         </form>}
         {page === "Legacy Claim" && <form className="form" onSubmit={(e) => submit(e, "claim")}>
           <Fields barcode amount="Claimed old card value (AUD)" reason="Evidence or old card details" />

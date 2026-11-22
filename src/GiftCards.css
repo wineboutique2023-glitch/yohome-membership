@@ -1,0 +1,65 @@
+.gift-workspace .gift-primary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 560px;
+  margin-block: 12px;
+}
+
+.gift-workspace .gift-primary button {
+  min-height: 44px;
+  padding-inline: 5px;
+  background: #edf5ee;
+  color: #234c38;
+}
+
+.gift-workspace .gift-primary button[aria-pressed="true"] {
+  background: #234c38;
+  color: #fff;
+}
+
+.gift-workspace .gift-tools {
+  max-width: 560px;
+  margin-block: 8px 20px;
+}
+
+.gift-workspace .gift-tools summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #234c38;
+  font-weight: 600;
+  padding-block: 6px;
+}
+
+.gift-workspace .gift-fields {
+  min-inline-size: 0;
+}
+
+.gift-workspace .gift-fields h4 {
+  margin-block: 0 12px;
+}
+
+.gift-workspace .form {
+  max-width: 560px;
+}
+
+.gift-workspace label > :is(input:not([type="checkbox"]), select, textarea) {
+  width: 100%;
+  min-width: 0;
+}
+
+.gift-workspace .gift-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  justify-content: space-between;
+}
+
+.gift-workspace .gift-card-detail {
+  margin-top: 16px;
+  padding: clamp(10px, 3vw, 18px);
+  border: 1px solid #dce7de;
+  border-radius: 12px;
+  background: #f7faf7;
+  overflow-wrap: anywhere;
+}
