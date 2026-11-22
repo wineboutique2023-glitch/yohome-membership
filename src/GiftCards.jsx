@@ -19,7 +19,7 @@ function Fields({ barcode = false, amount = false, expiry = false, reason = fals
     {barcode && <label>Barcode<input name="barcode" autoComplete="off" required /></label>}
     {amount && <label>{typeof amount === "string" ? amount : "Amount (AUD)"}<input name="amount" inputMode="decimal" required /></label>}
     {expiry && <label>Expiry date<input name="expires_on" type="date" required /></label>}
-    {payment && <label>Payment method<select name="payment" required><option value="">Select</option>{payments.map((p) => <option key={p}>{p}</option>)}</select></label>}
+    {payment && <label>Payment Method<select name="payment" required><option value="">Select</option>{payments.map((p) => <option key={p}>{p}</option>)}</select></label>}
     {reason && <label>{typeof reason === "string" ? reason : "Reason"}<textarea name="reason" maxLength={1000} required /></label>}
   </>;
 }
@@ -44,6 +44,21 @@ function ServiceSelect({ services, onChange }) {
   </select></label>;
 }
 
+const pageLabels = {
+  Checkout: "Use Gift Card",
+  Sales: "Sell Gift Card",
+  "Legacy Claim": "Old Gift Card",
+  Approvals: "Approve Old Cards",
+  "Gift Services": "Gift Card Services",
+};
+
+const historyLabels = {
+  stock: "Registered", sale: "Sold", redeem: "Used", exchange: "Replaced",
+  transfer: "Balance transferred", claim: "Old card submitted",
+  approve: "Approved", reject: "Declined", adjust: "Balance adjusted",
+  correct_card: "Registration corrected", cancel_card: "Cancelled",
+};
+
 function History({ entries }) {
   return <div className="gift-history"><table><thead><tr>
     <th>Date</th><th>Action</th><th>Barcode</th><th>Service / payment</th><th>Balance</th><th>Applied / paid</th><th>Details</th>
@@ -51,11 +66,13 @@ function History({ entries }) {
     const { result: data } = entry;
     return <tr key={entry.request_id ?? index}>
       <td>{new Date(entry.created_at).toLocaleString("en-AU", { timeZone: "Australia/Melbourne" })}</td>
-      <td>{entry.action}</td><td>{data.barcode}{data.replacement && ` → ${data.replacement}`}</td>
+      <td>{historyLabels[entry.action] ?? entry.action}</td><td>{data.barcode}{data.replacement && ` → ${data.replacement}`}</td>
       <td>{[data.service_name, data.payment].filter(Boolean).join(" · ")}</td>
       <td>{data.before !== undefined && `${aud(data.before)} → ${aud(data.after)}`}</td>
       <td>{data.redeemed !== undefined && `Applied ${aud(data.redeemed)} · Top-up ${aud(data.topup)}`}{data.cash_sale !== undefined && aud(data.cash_sale)}</td>
-      <td>{[data.actor_name, data.reason, data.transferred > 0 && `Transferred ${aud(data.transferred)}`].filter(Boolean).join(" · ")}</td>
+      <td>{[data.actor_name, data.reason,
+        Object.hasOwn(data, "registration_note") && `Note: ${data.previous_note ?? "—"} → ${data.registration_note ?? "—"}`,
+        data.transferred > 0 && `Transferred ${aud(data.transferred)}`].filter(Boolean).join(" · ")}</td>
     </tr>;
   })}</tbody></table></div>;
 }
@@ -87,7 +104,7 @@ export function SignIn({ client, title }) {
   </section>;
 }
 
-export default function GiftCards({ ownerView, client, userId, members, defaultMember, sellers, onLedgerChange }) {
+export default function GiftCards({ ownerView, client, userId, members, defaultMember, serviceDate, sellers, onLedgerChange }) {
   const storageKey = `yohome-gift-pending:${userId}`;
   const [request, setRequest] = useState(() => {
     try {
@@ -103,6 +120,8 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
   const [isError, setIsError] = useState(false);
   const [result, setResult] = useState(null);
   const [card, setCard] = useState(null);
+  const [customer, setCustomer] = useState(defaultMember || "guest");
+  const [customerSearch, setCustomerSearch] = useState("");
   const [quote, setQuote] = useState(null);
   const [saleFamily, setSaleFamily] = useState("");
   const [pending, setPending] = useState(null);
@@ -222,8 +241,13 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
       duration: card.service_duration, active: true,
     }, ...services.filter((s) => s.code !== card.service_code)]
     : services;
+  const activeMembers = members.filter((member) => !member.deleted);
+  const search = customerSearch.trim().toLowerCase();
+  const customerOptions = activeMembers.filter((member) => member.id === customer || !search
+    || [member.full_name, member.phone, member.card_id, member.email]
+      .some((value) => String(value ?? "").toLowerCase().includes(search)));
   const pages = ["Checkout", "Sales", "Legacy Claim"];
-  if (owner) pages.push("Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports");
+  if (owner) pages.push("Manage Gift Cards", "Approvals", "Card Stock", "Balance Adjustment", "Gift Services", "Reports");
 
   return <section className="panel gift-panel">
     <h3>Gift Cards</h3>
@@ -240,12 +264,20 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
     {overview && <>
       <p>Signed in as {overview.name}</p>
       <nav className="gift-actions" aria-label="Gift card functions">{pages.map((name) =>
-        <button type="button" key={name} disabled={busy} aria-pressed={page === name} onClick={() => selectPage(name)}>{name}</button>
+        <button type="button" key={name} disabled={busy} aria-pressed={page === name} onClick={() => selectPage(name)}>{pageLabels[name] ?? name}</button>
       )}</nav>
       <fieldset key={page} disabled={busy} className="gift-fields">
         {page === "Checkout" && <>
+          <div className="form">
+            <label>Search Customer<input className="search" placeholder="Phone / Card ID / Name / Email"
+              value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} /></label>
+            <label>Customer<select value={customer} onChange={(e) => setCustomer(e.target.value)}>
+              <option value="guest">Guest</option>
+              {customerOptions.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.phone || ""} · {m.card_id}</option>)}
+            </select></label>
+          </div>
           <form className="form" onSubmit={(e) => submit(e, "lookup", (value) => { setCard(value); setQuote(null); setResult(null); })}>
-            <label>Barcode<input name="barcode" autoComplete="off" autoFocus required onKeyDown={(event) => {
+            <label>Scan Gift Card Barcode<input name="barcode" autoComplete="off" required onKeyDown={(event) => {
               if (event.key !== "Enter") return;
               event.preventDefault();
               event.currentTarget.form.requestSubmit();
@@ -263,40 +295,75 @@ export default function GiftCards({ ownerView, client, userId, members, defaultM
               {quote && <form key={JSON.stringify(quote)} className="form" onSubmit={(e) => {
                 const exchange = Boolean(new FormData(e.currentTarget).get("replacement"));
                 submit(e, exchange ? "exchange" : "redeem", () => { setCard(null); setQuote(null); },
-                  { barcode: card.barcode, service_code: quote.service_code, quote });
+                  { barcode: card.barcode, service_code: quote.service_code, quote, ...(customer !== "guest" && { member_id: customer }) });
               }}>
-                <p>{quote.service_name} · Apply {aud(quote.redeemed)} · Customer pays {aud(quote.topup)} · Remaining {aud(quote.after)}</p>
-                <label>Customer<select name="member_id" defaultValue={defaultMember}>
-                  <option value="guest">Guest</option>
-                  {members.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.card_id}</option>)}
-                </select></label>
-                <label>Therapist<select name="therapist">
+                <label>Therapist<select name="therapist" required>
                   <option value="">Select</option>
                   {sellers.map((name) => <option key={name}>{name}</option>)}
                 </select></label>
+                <label>Service Date<input name="checkout_date" type="date" defaultValue={serviceDate} required /></label>
+                {quote.topup > 0 ? <Fields payment /> : <label>Payment Method<input value="Gift Card" readOnly /></label>}
+                <div className="priceBox">
+                  <p>Service Price: {aud(quote.service_price)}</p>
+                  <p>Gift Card Applied: {aud(quote.redeemed)}</p>
+                  <p>Customer Pays: {aud(quote.topup)}</p>
+                  <p>Remaining Card Balance: {aud(quote.after)}</p>
+                </div>
                 {quote.service_value_released > 0 && <>
                   <p>Unused service gift value: <strong>{aud(quote.service_value_released)}</strong>. The entire gift will be used.</p>
                   <label><input name="unused_value_confirmed" type="checkbox" value="true" required /> Customer confirmed they accept forfeiting this unused value</label>
                 </>}
-                {quote.topup > 0 && <><Fields payment /><label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label></>}
+                {quote.topup > 0 && <label><input name="payment_confirmed" type="checkbox" value="true" required /> Balance payment received</label>}
                 {card.kind === "legacy" && quote.after > 0 && <>
                   <label>Replacement barcode (leave blank to keep the approved legacy card)<input name="replacement" autoComplete="off" onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
                   <label><input name="old_card_collected" type="checkbox" value="true" /> Old physical card collected for exchange</label>
                 </>}
-                <button>Confirm gift card checkout</button>
+                <button>Confirm Checkout</button>
               </form>}
             </>}
             {card.kind === "legacy" && card.status === "active" && !card.is_expired && !quote && <>
-              <h4>Exchange without a purchase</h4>
+              <h4>Replace Old Card</h4>
               <form className="form" onSubmit={transferBalance}>
                 <label>New physical card barcode<input name="replacement" autoComplete="off" required
                   onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
                 <label><input name="old_card_collected" type="checkbox" value="true" required /> Old physical card collected</label>
-                <button>Transfer {aud(card.balance)} to new card</button>
+                <button>Replace Old Card · {aud(card.balance)}</button>
               </form>
             </>}
-            {card.history.length > 0 && <History entries={card.history} />}
+            {card.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
           </>}
+        </>}
+        {owner && page === "Manage Gift Cards" && <>
+          <form className="form" onSubmit={(e) => submit(e, "lookup", setCard)}>
+            <label>Barcode<input name="barcode" type="search" autoComplete="off" required /></label>
+            <button>Find Card</button>
+          </form>
+          {card && <div key={card.barcode}>
+            <h4>{card.barcode}</h4>
+            <p>{card.kind} · {card.status}{card.is_expired && " · expired"} · {aud(card.balance)}
+              {card.expires_on && ` · Expires ${card.expires_on}`}</p>
+            {card.service_name && <p>{serviceLabel({
+              name: card.service_name, duration: card.service_duration, price: card.service_value,
+            })}</p>}
+            <form className="form" onSubmit={(e) => {
+              const note = new FormData(e.currentTarget).get("registration_note");
+              submit(e, "correct_card", () => setCard(null),
+                { barcode: card.barcode, registration_note: note });
+            }}>
+              <label>Registration Note<textarea name="registration_note" defaultValue={card.registration_note ?? ""} maxLength={1000} /></label>
+              <Fields reason="Reason for correction" />
+              <button>Save Correction</button>
+            </form>
+            {card.can_cancel && <form className="form" onSubmit={(e) =>
+              submit(e, "cancel_card", () => setCard(null), { barcode: card.barcode })}>
+              <p>Cancelling stops future use. Any payment already recorded stays in the reports.</p>
+              <Fields reason="Reason for cancellation" />
+              <label><input type="checkbox" required /> Confirm this card should be cancelled</label>
+              <button className="danger">Cancel Card</button>
+            </form>}
+            <h4>Card History</h4>
+            {card.history.length ? <History entries={card.history} /> : <p>No activity yet.</p>}
+          </div>}
         </>}
         {page === "Sales" && <form className="form" onSubmit={(e) => submit(e, "sale")}>
           <Fields barcode />

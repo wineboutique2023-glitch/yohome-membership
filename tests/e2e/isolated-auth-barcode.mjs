@@ -102,13 +102,14 @@ try {
     .replace("nullif(current_setting('request.jwt.claim.sub',true),'')::uuid", "(auth.jwt()->>'sub')::uuid")
     .replace(/(create or replace function auth.uid\(\)[\s\S]*?\$\$;\n)(create or replace function auth.jwt\(\)[\s\S]*?\$\$;\n)/, "$2$1");
   await admin.query(sql);
-  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql", "20261121030000_receipt_status_server_only.sql"]) {
+  for (const migration of ["20261121000000_gift_cards.sql", "20261121010000_crm_auth_gift_checkout.sql", "20261121020000_preserve_legacy_crm_behaviour.sql", "20261121030000_receipt_status_server_only.sql", "20261122000000_gift_crm_service_catalog.sql", "20261122010000_gift_card_management.sql"]) {
     await admin.query(await readFile(new URL(`../../supabase/migrations/${migration}`, import.meta.url), "utf8"));
   }
   await admin.query(`create role authenticator login noinherit password '${restPassword}';
     grant anon,authenticated to authenticator;
     insert into public.service_items(id,name,normal_price,member_price,staff_pay) values
       ('original','Original gift service',100,80,35),('cheaper','Cheaper gift service',60,50,25);
+    insert into public.sales_people(name) values ('Test Therapist');
     insert into public.members(card_id,full_name,expiry_date) values ('MEM1','Scanner Test Member','2099-11-21');`);
   const restCheck = run("postgrest", {
     PGRST_DB_URI: pgUri("authenticator", restPassword), PGRST_DB_SCHEMAS: "public",
@@ -134,9 +135,6 @@ try {
   const snapshot = await rpc(staff.access_token, "snapshot");
   assert.ok(snapshot.services.every((s) => !Object.hasOwn(s, "staff_pay")));
   assert.deepEqual(await json(await fetch(`${restUrl}/service_items?select=staff_pay`, { headers: { Authorization: `Bearer ${staff.access_token}` } })), []);
-  for (const [service_code, name, amount] of [["original","Original gift service",10000],["cheaper","Cheaper gift service",6000]]) {
-    await rpc(owner.access_token, "set_service", { service_code, name, amount }, true);
-  }
   await rpc(owner.access_token, "stock", { barcode: "0000123" }, true);
   await rpc(staff.access_token, "sale", { barcode: "0000123", service_code: "original", expires_on: "2099-11-21", payment: "Tyro" }, true);
 
@@ -176,17 +174,18 @@ try {
   assert.equal(await page.getByRole("button", { name: "Reports", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Checkout", exact: true }).click();
   await page.getByRole("button", { name: "Gift Card Checkout", exact: true }).click();
-  await page.getByLabel("Barcode", { exact: true }).pressSequentially("0000123");
-  await page.getByLabel("Barcode", { exact: true }).press("Enter");
+  await page.getByLabel("Scan Gift Card Barcode", { exact: true }).pressSequentially("0000123");
+  await page.getByLabel("Scan Gift Card Barcode", { exact: true }).press("Enter");
   await page.getByText(/0000123 · active/).waitFor();
   await page.locator("select[name=service_code]").selectOption("cheaper");
   await page.getByRole("button", { name: "Calculate gift card payment" }).click();
   await page.getByText(/Unused service gift value/).waitFor();
-  await page.locator("select[name=member_id]").selectOption(snapshot.members[0].id);
-  await page.getByRole("button", { name: "Confirm gift card checkout" }).click();
+  await page.getByLabel("Customer", { exact: true }).selectOption(snapshot.members[0].id);
+  await page.getByLabel("Therapist", { exact: true }).selectOption("Test Therapist");
+  await page.getByRole("button", { name: "Confirm Checkout" }).click();
   assert.equal((await rpc(owner.access_token, "receipts")).checkouts, 0);
   await page.getByLabel(/Customer confirmed/).check();
-  await page.getByRole("button", { name: "Confirm gift card checkout" }).click();
+  await page.getByRole("button", { name: "Confirm Checkout" }).click();
   await page.getByText("Saved.", { exact: true }).waitFor();
   const ownerSnapshot = await rpc(owner.access_token, "snapshot");
   assert.equal(ownerSnapshot.checkouts.length, 1);

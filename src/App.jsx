@@ -1245,7 +1245,7 @@ function CRM({ role, userId }) {
           </div>
         )}
 
-        {tab === "gift cards" && giftEnabled && <GiftCards ownerView={isOwner} client={supabase} userId={userId} members={members} defaultMember={giftMember} sellers={sellers} onLedgerChange={loadData} />}
+        {tab === "gift cards" && giftEnabled && <GiftCards ownerView={isOwner} client={supabase} userId={userId} members={members} defaultMember={giftMember} serviceDate={todayDateInput()} sellers={sellers} onLedgerChange={loadData} />}
 
         {tab === "services" && isOwner && (
           <div className="grid-two">
