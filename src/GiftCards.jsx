@@ -54,6 +54,12 @@ const pageLabels = {
   "Gift Services": "Gift Card Services",
 };
 
+const recordStatus = {
+  stock: "Unsold", pending: "Pending Approval", active: "Active", rejected: "Declined",
+  spent: "Fully Redeemed", exchanged: "Replaced", cancelled: "Cancelled",
+};
+const displayRecordStatus = (card) => card.status === "active" && card.is_expired ? "Expired" : recordStatus[card.status];
+
 const historyLabels = {
   stock: "Registered", stock_batch: "Stock registered", sale: "Sold", redeem: "Used", exchange: "Replaced",
   transfer: "Balance transferred", claim: "Old card submitted",
@@ -137,6 +143,32 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
   const [manageAction, setManageAction] = useState("");
   const [pending, setPending] = useState(null);
   const [report, setReport] = useState(null);
+  const [manageView, setManageView] = useState("records");
+  const [recordCursors, setRecordCursors] = useState([""]);
+  const [records, setRecords] = useState(null);
+  const [recordsError, setRecordsError] = useState("");
+  const [recordsRevision, setRecordsRevision] = useState(0);
+  const manageOwner = ownerView && overview?.role === "owner";
+  const recordCursor = recordCursors.at(-1);
+
+  useEffect(() => {
+    if (!manageOwner || page !== "Manage Gift Cards" || manageView !== "records") return;
+    let current = true;
+    async function loadRecords() {
+      try {
+        const { data, error } = await client.rpc("membership_gift_card", {
+          action_name: "manage_list", args: { after: recordCursor },
+        });
+        if (error) throw new Error(error.message);
+        if (current) setRecords(data);
+      } catch (error) {
+        if (current) setRecordsError(error.message);
+      }
+    }
+    void loadRecords();
+    return () => { current = false; };
+  }, [client, manageOwner, page, manageView, recordCursor, recordsRevision]);
+
   const running = useRef(false);
 
   useEffect(() => {
@@ -212,6 +244,11 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
         saveRequest(null);
         setResult(data);
         setMessage("Saved.");
+        if (["stock", "stock_batch", "correct_card", "cancel_card"].includes(action)) {
+          setRecords(null);
+          setRecordsError("");
+          setRecordsRevision((value) => value + 1);
+        }
         if (["sale", "redeem", "exchange"].includes(action)) void onLedgerChange();
       }
       onResult?.(data);
@@ -265,6 +302,13 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
       return;
     }
     setPage(next);
+    if (next === "Manage Gift Cards") {
+      setManageView("records");
+      setRecordCursors([""]);
+      setRecords(null);
+      setRecordsError("");
+      setRecordsRevision((value) => value + 1);
+    }
     setBarcodeInput("");
     setCheckoutService("");
     setRedeemInput("");
@@ -285,7 +329,7 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
     if (next === "Reports") void run("report", {}, setReport);
   }
 
-  const owner = ownerView && overview?.role === "owner";
+  const owner = manageOwner;
   const services = overview?.services ?? [];
   const saleFamilies = [...new Set(services.map((service) => serviceFamily(service.name)))];
   const saleOptions = services.filter((service) => serviceFamily(service.name) === saleFamily)
@@ -409,14 +453,57 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
           {card?.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
         </div>}
         {owner && page === "Manage Gift Cards" && <>
-          <div className="gift-actions"><button type="button" onClick={() => selectPage("Unsold Card Stock")}>Add</button></div>
-          <form className="form" onSubmit={(e) => submit(e, "manage_lookup", (value) => { setCard(value); setManageAction(""); })}>
-            <label>Barcode<input name="barcode" type="search" autoComplete="off" required /></label>
-            <button>Find Card</button>
-          </form>
+          <div className="gift-actions" aria-label="Manage card options">
+            <button type="button" aria-pressed={manageView === "records"} onClick={() => setManageView("records")}>Card Records</button>
+            <button type="button" aria-pressed={manageView === "add"} onClick={() => { setManageView("add"); setCard(null); }}>Add Card</button>
+          </div>
+          {manageView === "add" ? <form className="form" onSubmit={(e) => {
+            const form = e.currentTarget;
+            submit(e, "stock", () => form.reset());
+          }}>
+            <label>Barcode<input name="barcode" autoComplete="off" placeholder="Scan or enter barcode" required
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.form.elements.reason.focus(); } }} /></label>
+            <Fields reason="Reason for registration" />
+            <button className="primary">Register Unsold Card</button>
+          </form> : <>
+            <form className="form" onSubmit={(e) => {
+              setCard(null);
+              setManageAction("");
+              submit(e, "manage_lookup", setCard);
+            }}>
+              <label>Search Barcode<input name="barcode" type="search" autoComplete="off" required /></label>
+              <button>Find Card</button>
+            </form>
+            {recordsError && <p role="alert">{recordsError}</p>}
+            {!recordsError && !records && <p role="status">Loading card records…</p>}
+            {records?.length === 0 && <p>No card records on this page.</p>}
+            {records?.length > 0 && <div className="gift-history gift-records">
+              <table><thead><tr><th>Barcode</th><th>Status</th><th>Original Value</th><th>Remaining Balance</th><th>Expiry Date</th></tr></thead>
+                <tbody>{records.slice(0, 50).map((record) => <tr key={record.barcode}>
+                  <td><button type="button" onClick={() => {
+                    setCard(null);
+                    setManageAction("");
+                    void run("manage_lookup", { barcode: record.barcode }, setCard);
+                  }}>{record.barcode}</button></td>
+                  <td>{displayRecordStatus(record)}</td>
+                  <td>{record.original_value == null ? "—" : aud(record.original_value)}</td>
+                  <td>{aud(record.balance)}</td>
+                  <td>{record.expires_on ?? "—"}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>}
+            {(recordCursors.length > 1 || records?.length > 50) && <div className="gift-actions">
+              <button type="button" disabled={recordCursors.length === 1 || !records} onClick={() => {
+                setRecords(null); setRecordsError(""); setRecordCursors((values) => values.slice(0, -1));
+              }}>Previous</button>
+              <button type="button" disabled={!(records?.length > 50)} onClick={() => {
+                setRecordCursors((values) => [...values, records[49].barcode]); setRecords(null); setRecordsError("");
+              }}>Next</button>
+            </div>}
+          </>}
           {card && <div className="gift-card-detail" key={card.barcode}>
             <h4>{card.barcode}</h4>
-            <p>{card.kind} · {card.status}{card.is_expired && " · expired"} · {aud(card.balance)}
+            <p>{card.kind} · {displayRecordStatus(card)} · {aud(card.balance)}
               {card.expires_on && ` · Expires ${card.expires_on}`}</p>
             {card.service_name && <p>{serviceLabel({
               name: card.service_name, duration: card.service_duration, price: card.service_value,
@@ -438,7 +525,7 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
             </form>}
             {owner && card.can_cancel && manageAction === "cancel" && <form className="form" onSubmit={(e) =>
               submit(e, "cancel_card", () => setCard(null), { barcode: card.barcode })}>
-              <p>Cancelling stops future use. Any payment already recorded stays in the reports.</p>
+              <p>Cancelling retires this barcode. The card record and its history are retained.</p>
               <Fields reason="Reason for cancellation" />
               <label><input type="checkbox" required /> Confirm this card should be cancelled</label>
               <button className="danger">Cancel Card</button>

@@ -35,6 +35,7 @@ before(async () => {
   await db.exec(await sql("../supabase/migrations/20261122000000_gift_crm_service_catalog.sql"));
   await db.exec(await sql("../supabase/migrations/20261122010000_gift_card_management.sql"));
   await db.exec(await sql("../supabase/migrations/20261122020000_gift_card_workflow.sql"));
+  await db.exec(await sql("../supabase/migrations/20261123000000_manage_gift_card_records.sql"));
 });
 after(() => db.close());
 
@@ -191,8 +192,17 @@ test("release: receipt status is server-managed and a $100 legacy card exchanges
 });
 
 test("owner corrections and cancellation retain card history and recorded receipts", async () => {
-  await sell("MGT-CANCEL");
-  const lookup = { barcode: "MGT-CANCEL" };
+  await sell("MGT-SOLD");
+  const lookup = { barcode: "000MGT-CANCEL" };
+  await assert.rejects(gift(staff, "stock", lookup), /Owner access/);
+  await assert.rejects(gift(staff, "manage_list", {}, null), /Owner access/);
+  await gift(owner, "stock", { ...lookup, reason: "New printed cards" });
+  await assert.rejects(gift(owner, "stock", lookup), /duplicate/);
+  const cards = await gift(owner, "manage_list", {}, null);
+  assert.equal(cards.find((card) => card.barcode === lookup.barcode).status, "stock");
+  assert.equal(cards.find((card) => card.barcode === "MGT-SOLD").original_value, 10000);
+  assert.ok((await gift(owner, "manage_list", { after: lookup.barcode }, null)).every((card) => card.barcode !== lookup.barcode));
+  await assert.rejects(gift(owner, "cancel_card", { barcode: "MGT-SOLD", reason: "Sold" }), /without transactions/);
   const before = await crm(owner, "receipts");
   const correction = { ...lookup, reason: "Wrong label", registration_note: "Corrected label" };
   await assert.rejects(gift(staff, "correct_card", correction), /Owner access/);
@@ -207,11 +217,13 @@ test("owner corrections and cancellation retain card history and recorded receip
   assert.deepEqual(await gift(owner, "cancel_card", cancel, operation), result);
   const saved = await gift(owner, "lookup", lookup);
   assert.deepEqual([saved.status, saved.balance, saved.can_cancel], ["cancelled", 0, false]);
-  assert.deepEqual(saved.history.map((event) => event.action).sort(), ["cancel_card", "correct_card", "sale", "stock"]);
+  assert.deepEqual(saved.history.map((event) => event.action).sort(), ["cancel_card", "correct_card", "stock"]);
+  assert.equal(saved.history.find((event) => event.action === "stock").result.reason, "New printed cards");
   assert.equal((await crm(owner, "receipts")).total, before.total);
+  await assert.rejects(gift(staff, "sale", { ...lookup, amount: 5000, expires_on: expiry, payment: "Cash" }), /unused stock card/);
   await assert.rejects(gift(staff, "quote", { ...lookup, service_code: "original" }), /active unexpired/);
-  await assert.rejects(gift(owner, "cancel_card", { barcode: "00LESS", reason: "Already used" }), /Only unused/);
-  await assert.rejects(gift(owner, "cancel_card", { barcode: "00099", reason: "Replacement" }), /Only unused/);
+  await assert.rejects(gift(owner, "cancel_card", { barcode: "00LESS", reason: "Already used" }), /without transactions/);
+  await assert.rejects(gift(owner, "cancel_card", { barcode: "00099", reason: "Replacement" }), /without transactions/);
 });
 
 test("gift checkout records the selected service date and validates therapist", async () => {

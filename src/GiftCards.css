@@ -145,3 +145,23 @@
   margin-top: 14px;
   padding-top: 12px;
 }
+
+.gift-workspace .gift-records {
+  border: 1px solid #dce7de;
+  border-radius: 12px;
+}
+
+.gift-workspace .gift-records th {
+  background: #edf5ee;
+  color: #234c38;
+  white-space: nowrap;
+}
+
+.gift-workspace .gift-records td button {
+  border: 0;
+  border-radius: 6px;
+  background: #edf5ee;
+  color: #234c38;
+  padding: 6px 10px;
+  text-align: left;
+}
