@@ -36,6 +36,7 @@ before(async () => {
   await db.exec(await sql("../supabase/migrations/20261122010000_gift_card_management.sql"));
   await db.exec(await sql("../supabase/migrations/20261122020000_gift_card_workflow.sql"));
   await db.exec(await sql("../supabase/migrations/20261123000000_manage_gift_card_records.sql"));
+  await db.exec(await sql("../supabase/migrations/20261125000000_legacy_claim_expiry.sql"));
 });
 after(() => db.close());
 
@@ -136,7 +137,7 @@ test("cheaper service requires explicit confirmation and legacy exchange keeps i
   assert.ok((await crm(owner, "snapshot")).checkouts.some((r) => r.gift_unused_value === 40 && r.cash_received === 0));
   const barcode = "OLD2";
   const replacement = "00099";
-  await gift(staff, "claim", { barcode, amount: 10000, reason: "Old physical card" });
+  await gift(staff, "claim", { barcode, amount: 10000, old_expires_on: "2020-01-01" });
   await assert.rejects(gift(staff, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Attempt" }), /Owner access/);
   await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked evidence", physical_card_verified: true });
   await gift(owner, "stock", { barcode: replacement });
@@ -175,7 +176,7 @@ test("release: receipt status is server-managed and a $100 legacy card exchanges
   await db.exec("insert into public.service_items(id,name,normal_price) values ('release-50','Release 50',50)");
   const replacement = "00000050";
   const barcode = "RELEASE-100";
-  await gift(staff, "claim", { barcode, amount: 10000, reason: "Synthetic old card" });
+  await gift(staff, "claim", { barcode, amount: 10000, old_expires_on: "2020-01-01" });
   await assert.rejects(gift(staff, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Attempt" }), /Owner access/);
   await gift(owner, "approve", { barcode, amount: 10000, expires_on: expiry, reason: "Checked", physical_card_verified: true });
   await gift(owner, "stock", { barcode: replacement });
@@ -275,9 +276,9 @@ test("verified old card transfer and owner stock registration are atomic", async
   await assert.rejects(gift(owner, "lookup", { barcode: "FLOW-ROLLBACK" }), /Card not found/);
   await assert.rejects(gift(staff, "manage_lookup", { barcode: replacement }), /Owner access/);
   assert.ok((await gift(owner, "manage_lookup", { barcode: replacement })).history.some((entry) => entry.action === "stock_batch"));
-  await assert.rejects(gift(staff, "claim", { barcode: replacement, amount: 1234, reason: "Old" }), /duplicate/);
+  await assert.rejects(gift(staff, "claim", { barcode: replacement, amount: 1234, old_expires_on: "2020-01-01" }), /duplicate/);
   await assert.rejects(gift(staff, "quote", { barcode: replacement, service_code: "original" }), /active unexpired/);
-  await gift(staff, "claim", { barcode, amount: 1234, reason: "Old card supplied" });
+  await gift(staff, "claim", { barcode, amount: 1234, old_expires_on: "2020-01-01" });
   await assert.rejects(gift(staff, "quote", { barcode, service_code: "original" }), /active unexpired/);
   const approve = { barcode, amount: 1234, expires_on: expiry, reason: "Checked old card" };
   await assert.rejects(gift(owner, "approve", approve), /Verify the physical/);
@@ -294,4 +295,37 @@ test("verified old card transfer and owner stock registration are atomic", async
   assert.deepEqual([newCard.balance, newCard.expires_on, newCard.status], [1234, expiry, "active"]);
   assert.equal((await gift(staff, "lookup", { barcode })).status, "exchanged");
   assert.equal((await crm(owner, "receipts")).total, before);
+});
+
+test("expired old card claims require Owner review and keep the original expiry and audit", async () => {
+  const barcode = "000-EXPIRED-CLAIM";
+  const claim = { barcode, amount: 10500, old_expires_on: "2020-02-01" };
+  await assert.rejects(gift(staff, "claim", { barcode, amount: 10500 }), /old card expiry date/);
+  await gift(staff, "claim", claim);
+  await assert.rejects(gift(staff, "pending", { barcode }, null), /Owner access/);
+  const [item] = await gift(owner, "pending", { barcode }, null);
+  assert.deepEqual([item.barcode, item.claim.claimed, item.claim.old_expires_on, item.claim.actor_name],
+    [barcode, 10500, "2020-02-01", "Staff"]);
+  assert.ok(item.submitted_at);
+  assert.equal(item.balance, 0);
+  await assert.rejects(gift(owner, "correct_card", { barcode, reason: "Edit", registration_note: "Edit" }), /Approve Old Cards/);
+  await assert.rejects(gift(owner, "cancel_card", { barcode, reason: "Cancel" }), /without transactions/);
+  const approval = { barcode, amount: 8000, expires_on: expiry, reason: "Verified",
+    physical_card_verified: true, review_notes: "Physical card checked" };
+  await assert.rejects(gift(staff, "approve", approval), /Owner access/);
+  await assert.rejects(gift(staff, "adjust", { barcode, amount: 8000, reason: "Change" }), /Owner access/);
+  await gift(owner, "approve", approval);
+  assert.deepEqual(await gift(owner, "pending", { barcode }, null), []);
+  const card = await gift(owner, "manage_lookup", { barcode }, null);
+  assert.deepEqual([card.status, card.balance, card.expires_on], ["active", 8000, expiry]);
+  const decision = card.history.find((event) => event.action === "approve");
+  assert.deepEqual([decision.result.actor_name, decision.result.reason, decision.result.review_notes],
+    ["Owner", "Verified", "Physical card checked"]);
+  assert.ok(decision.created_at);
+  assert.equal(card.history.find((event) => event.action === "claim").result.old_expires_on, "2020-02-01");
+  const rejected = { ...claim, barcode: "000-REJECTED-CLAIM" };
+  await gift(staff, "claim", rejected);
+  await gift(owner, "reject", { barcode: rejected.barcode, reason: "Verification failed" });
+  const rejectedCard = await gift(owner, "manage_lookup", { barcode: rejected.barcode }, null);
+  assert.deepEqual([rejectedCard.status, rejectedCard.balance], ["rejected", 0]);
 });

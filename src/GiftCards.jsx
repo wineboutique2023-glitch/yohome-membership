@@ -78,7 +78,7 @@ function History({ entries }) {
       <td>{[data.service_name, data.payment].filter(Boolean).join(" · ")}</td>
       <td>{data.before !== undefined && `${aud(data.before)} → ${aud(data.after)}`}</td>
       <td>{data.redeemed !== undefined && `Applied ${aud(data.redeemed)} · Top-up ${aud(data.topup)}`}{data.cash_sale !== undefined && aud(data.cash_sale)}</td>
-      <td>{[data.actor_name, data.reason,
+      <td>{[data.actor_name, data.reason, data.review_notes,
         Object.hasOwn(data, "registration_note") && `Note: ${data.previous_note ?? "—"} → ${data.registration_note ?? "—"}`,
         data.transferred > 0 && `Transferred ${aud(data.transferred)}`].filter(Boolean).join(" · ")}</td>
     </tr>;
@@ -142,6 +142,7 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
   const [saleValue, setSaleValue] = useState("");
   const [manageAction, setManageAction] = useState("");
   const [pending, setPending] = useState(null);
+  const [reviewBarcode, setReviewBarcode] = useState("");
   const [report, setReport] = useState(null);
   const [manageView, setManageView] = useState("records");
   const [recordCursors, setRecordCursors] = useState([""]);
@@ -295,7 +296,7 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
     void run("lookup", { barcode }, setCard);
   }
 
-  function selectPage(next) {
+  function selectPage(next, barcode = "") {
     if (request) {
       setMessage("Retry the previous submission before leaving this page.");
       setIsError(true);
@@ -325,7 +326,11 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
     setMissingBarcode("");
     setClaimOld(false);
     setMessage("");
-    if (next === "Approvals") void run("pending", {}, setPending);
+    if (next === "Approvals") {
+      setPending(null);
+      setReviewBarcode(barcode);
+      void run("pending", barcode ? { barcode } : {}, setPending);
+    }
     if (next === "Reports") void run("report", {}, setReport);
   }
 
@@ -446,7 +451,8 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
             {missingBarcode && claimOld && <form className="form" onSubmit={(e) => submit(e, "claim",
               () => { setMissingBarcode(""); setClaimOld(false); setBarcodeInput(""); }, { barcode: missingBarcode })}>
               <p>Old card: {missingBarcode}</p>
-              <Fields amount="Claimed old card value (AUD)" reason="Evidence or old card details" />
+              <Fields amount="Claimed old card value (AUD)" />
+              <label>Old Card Expiry Date<input name="old_expires_on" type="date" required /></label>
               <button>Submit for owner approval</button>
             </form>}
           </div>
@@ -508,7 +514,8 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
             {card.service_name && <p>{serviceLabel({
               name: card.service_name, duration: card.service_duration, price: card.service_value,
             })}</p>}
-            {owner && <div className="gift-actions">
+            {owner && card.status === "pending" && <button type="button" onClick={() => selectPage("Approvals", card.barcode)}>Review Old Card</button>}
+            {owner && card.status !== "pending" && <div className="gift-actions">
               <button type="button" aria-expanded={manageAction === "edit"}
                 onClick={() => setManageAction(manageAction === "edit" ? "" : "edit")}>Edit</button>
               {card.can_cancel && <button type="button" className="danger" aria-expanded={manageAction === "cancel"}
@@ -591,19 +598,36 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
           <button className="primary">Confirm Sale</button>
         </form>)}
         {page === "Legacy Claim" && <form className="form" onSubmit={(e) => submit(e, "claim")}>
-          <Fields barcode amount="Claimed old card value (AUD)" reason="Evidence or old card details" />
+          <Fields barcode amount="Claimed old card value (AUD)" />
+          <label>Old Card Expiry Date<input name="old_expires_on" type="date" required /></label>
           <button>Submit for owner approval</button>
         </form>}
-        {page === "Approvals" && <>
-          <button onClick={() => void run("pending", {}, setPending)}>Refresh claims</button>
+        {owner && page === "Approvals" && <>
+          {reviewBarcode && <button type="button" onClick={() => selectPage("Approvals")}>All Pending Claims</button>}
+          <button type="button" onClick={() => void run("pending", reviewBarcode ? { barcode: reviewBarcode } : {}, setPending)}>Refresh claims</button>
           {pending?.length === 0 && <p>No pending claims.</p>}
           {pending?.map((item) => <form className="form gift-review" key={item.barcode} onSubmit={(e) => {
-            const action = e.nativeEvent.submitter.value;
+            const action = e.nativeEvent.submitter?.value;
+            if (!["approve", "reject"].includes(action)) { e.preventDefault(); return; }
+            if (action === "reject") {
+              e.preventDefault();
+              const fields = new FormData(e.currentTarget);
+              const reason = String(fields.get("reason") ?? "").trim();
+              if (!reason) { setIsError(true); setMessage("Enter a review reason."); return; }
+              void run("reject", { barcode: item.barcode, reason, review_notes: fields.get("review_notes") },
+                () => setPending((current) => current.filter((c) => c.barcode !== item.barcode)), true);
+              return;
+            }
             submit(e, action, () => setPending((current) => current.filter((c) => c.barcode !== item.barcode)), { barcode: item.barcode });
           }}>
-            <p>{item.barcode} · Claimed {aud(item.claim.claimed)} · {item.claim.actor_name}</p>
-            <p>{item.claim.reason}</p>
-            <Fields amount="Approved balance (AUD)" expiry reason="Review reason" />
+            <p><strong>Barcode:</strong> {item.barcode}</p>
+            <p><strong>Claimed Value:</strong> {aud(item.claim.claimed)}</p>
+            <p><strong>Old Card Expiry Date:</strong> {item.claim.old_expires_on ?? "Not recorded"}</p>
+            <p><strong>Submitted by:</strong> {item.claim.actor_name} · {new Date(item.submitted_at).toLocaleString("en-AU", { timeZone: "Australia/Melbourne" })}</p>
+            {item.claim.reason && <p><strong>Previous notes:</strong> {item.claim.reason}</p>}
+            <Fields amount="Approved balance (AUD)" reason="Review reason" />
+            <label>Approved Expiry Date<input name="expires_on" type="date" defaultValue={item.claim.old_expires_on ?? ""} required /></label>
+            <label>Review Notes (optional)<textarea name="review_notes" maxLength={1000} /></label>
             <label><input name="physical_card_verified" type="checkbox" value="true" required /> Physical old card verified</label>
             <div className="gift-actions"><button value="approve">Approve</button><button value="reject" formNoValidate>Reject</button></div>
           </form>)}
