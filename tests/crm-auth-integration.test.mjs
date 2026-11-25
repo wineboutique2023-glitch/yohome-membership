@@ -37,6 +37,7 @@ before(async () => {
   await db.exec(await sql("../supabase/migrations/20261122020000_gift_card_workflow.sql"));
   await db.exec(await sql("../supabase/migrations/20261123000000_manage_gift_card_records.sql"));
   await db.exec(await sql("../supabase/migrations/20261125000000_legacy_claim_expiry.sql"));
+  await db.exec(await sql("../supabase/migrations/20261125010000_complete_card_history.sql"));
 });
 after(() => db.close());
 
@@ -328,4 +329,22 @@ test("expired old card claims require Owner review and keep the original expiry 
   await gift(owner, "reject", { barcode: rejected.barcode, reason: "Verification failed" });
   const rejectedCard = await gift(owner, "manage_lookup", { barcode: rejected.barcode }, null);
   assert.deepEqual([rejectedCard.status, rejectedCard.balance], ["rejected", 0]);
+});
+
+test("card history returns every permitted record beyond the former 100-entry limit", async () => {
+  const barcode = "000-HISTORY-PAGES";
+  await gift(owner, "stock", { barcode });
+  await db.query(`
+    insert into gift_private.events (request_id, actor, action, barcode, request, result, created_at)
+    select gen_random_uuid(), $1, 'redeem', $2, '{}'::jsonb,
+      jsonb_build_object('barcode',$2::text,'before',n,'after',n-1,'reason','Internal'),
+      now() - n * interval '1 second'
+    from generate_series(1, 105) as n
+  `, [owner, barcode]);
+  const staffHistory = (await gift(staff, "lookup", { barcode }, null)).history;
+  const ownerHistory = (await gift(owner, "manage_lookup", { barcode }, null)).history;
+  assert.equal(staffHistory.length, 105);
+  assert.equal(ownerHistory.length, 106);
+  assert.deepEqual(staffHistory.map((event) => event.result.before), Array.from({ length: 105 }, (_, i) => i + 1));
+  assert.ok(staffHistory.every((event) => !Object.hasOwn(event.result, "reason")));
 });

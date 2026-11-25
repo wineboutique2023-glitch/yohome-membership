@@ -85,6 +85,60 @@ function History({ entries }) {
   })}</tbody></table></div>;
 }
 
+const historyPageSize = 5;
+
+const historyAmounts = new Set([
+  "before", "after", "claimed", "cash_sale", "redeemed", "topup", "transferred",
+  "service_price", "service_value", "service_value_released", "price", "balance",
+]);
+
+function historyDetailValue(key, value) {
+  if (value == null || value === "") return "—";
+  if (historyAmounts.has(key)) return aud(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+function CardHistory({ barcode, entries }) {
+  const [selectedPage, setSelectedPage] = useState(1);
+  const ordered = [...entries].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const pageCount = Math.max(1, Math.ceil(ordered.length / historyPageSize));
+  const page = Math.min(selectedPage, pageCount);
+  const offset = (page - 1) * historyPageSize;
+
+  return <section className="gift-card-history" aria-label={`Card History for ${barcode}`}>
+    <h4>Card History <span>· {barcode}</span></h4>
+    {ordered.length === 0 ? <p>No activity yet.</p> : <div className="gift-history"><table>
+      <thead><tr><th scope="col">Date</th><th scope="col">Action</th><th scope="col">Service / payment</th>
+        <th scope="col">Balance</th><th scope="col">Applied / paid</th><th scope="col">Details</th></tr></thead>
+      <tbody>{ordered.slice(offset, offset + historyPageSize).map((entry, index) => {
+        const data = entry.result;
+        const related = [data.barcode, data.replacement].filter((code) => code && code !== barcode);
+        return <tr key={entry.request_id ?? offset + index}>
+          <td>{new Date(entry.created_at).toLocaleString("en-AU", { timeZone: "Australia/Melbourne" })}</td>
+          <td>{historyLabels[entry.action] ?? entry.action}
+            {related.length > 0 && <small>Related: {related.join(" → ")}</small>}</td>
+          <td>{[data.service_name, data.payment].filter(Boolean).join(" · ") || "—"}</td>
+          <td>{data.before !== undefined ? `${aud(data.before)} → ${aud(data.after)}` : "—"}</td>
+          <td>{data.redeemed !== undefined && `Applied ${aud(data.redeemed)} · Top-up ${aud(data.topup)}`}{data.cash_sale !== undefined && aud(data.cash_sale)}</td>
+          <td><details><summary>View details</summary>
+            <dl>{Object.entries(data).filter(([key, value]) =>
+              !["barcode", "replacement"].includes(key) || value && value !== barcode
+            ).map(([key, value]) => <div key={key}>
+              <dt>{key.replaceAll("_", " ")}</dt><dd>{historyDetailValue(key, value)}</dd>
+            </div>)}</dl>
+          </details></td>
+        </tr>;
+      })}</tbody>
+    </table></div>}
+    <div className="gift-history-pages">
+      <button type="button" disabled={page <= 1} onClick={() => setSelectedPage(page - 1)}>Previous</button>
+      <span aria-live="polite">Page {page} of {pageCount} · {ordered.length} {ordered.length === 1 ? "record" : "records"}</span>
+      <button type="button" disabled={page >= pageCount} onClick={() => setSelectedPage(page + 1)}>Next</button>
+    </div>
+  </section>;
+}
+
 export function SignIn({ client, title }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -456,7 +510,7 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
               <button>Submit for owner approval</button>
             </form>}
           </div>
-          {card?.history.length > 0 && <><h4>Card History</h4><History entries={card.history} /></>}
+          {card && <CardHistory key={card.barcode} barcode={card.barcode} entries={card.history} />}
         </div>}
         {owner && page === "Manage Gift Cards" && <>
           <div className="gift-actions" aria-label="Manage card options">
@@ -537,8 +591,7 @@ export default function GiftCards({ ownerView, client, userId, serviceDate, sell
               <label><input type="checkbox" required /> Confirm this card should be cancelled</label>
               <button className="danger">Cancel Card</button>
             </form>}
-            <h4>Card History</h4>
-            {card.history.length ? <History entries={card.history} /> : <p>No activity yet.</p>}
+            <CardHistory key={card.barcode} barcode={card.barcode} entries={card.history} />
           </div>}
         </>}
         {page === "Sales" && (salePayment === "transfer" ? <>
